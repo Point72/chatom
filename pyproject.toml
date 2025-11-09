@@ -10,7 +10,6 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 version = "0.1.0"
 requires-python = ">=3.10"
-<<<<<<< before updating
 keywords = [
     "chat",
     "chatbot",
@@ -21,9 +20,6 @@ keywords = [
     "matrix",
     "whatsapp",
 ]
-=======
-keywords = []
->>>>>>> after updating
 
 classifiers = [
     "Development Status :: 3 - Alpha",
