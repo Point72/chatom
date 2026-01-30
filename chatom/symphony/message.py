@@ -7,9 +7,10 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from pydantic import model_validator
-
 from chatom.base import Field, Message
+
+from .channel import SymphonyChannel
+from .user import SymphonyUser
 
 if TYPE_CHECKING:
     from chatom.format import FormattedMessage
@@ -33,9 +34,6 @@ class SymphonyMessage(Message):
     Based on the Symphony REST API message structure.
 
     Attributes:
-        message_id: The unique Symphony message ID.
-        stream_id: The stream (conversation) ID.
-        from_user_id: The sender's Symphony user ID.
         message_ml: The MessageML content.
         presentation_ml: The PresentationML rendered content.
         entity_data: Entity data for structured objects.
@@ -53,18 +51,9 @@ class SymphonyMessage(Message):
         mentions: List of user mentions in the message.
     """
 
-    message_id: str = Field(
-        default="",
-        description="The unique Symphony message ID.",
-    )
-    stream_id: str = Field(
-        default="",
-        description="The stream (conversation) ID.",
-    )
-    from_user_id: Optional[int] = Field(
-        default=None,
-        description="The sender's Symphony user ID.",
-    )
+    # message_id
+    # stream_id
+
     message_ml: Optional[str] = Field(
         default=None,
         description="The MessageML content.",
@@ -121,25 +110,6 @@ class SymphonyMessage(Message):
         default_factory=list,
         description="List of cashtags in the message.",
     )
-    mentions: List[int] = Field(
-        default_factory=list,
-        description="List of user IDs mentioned in the message.",
-    )
-
-    @model_validator(mode="after")
-    def _sync_stream_channel_ids(self) -> "SymphonyMessage":
-        """Sync stream_id and channel_id.
-
-        Symphony uses stream_id while the base Message class uses channel_id.
-        This validator ensures they stay in sync.
-        """
-        # If stream_id is set but channel_id is not, copy stream_id to channel_id
-        if self.stream_id and not self.channel_id:
-            object.__setattr__(self, "channel_id", self.stream_id)
-        # If channel_id is set but stream_id is not, copy channel_id to stream_id
-        elif self.channel_id and not self.stream_id:
-            object.__setattr__(self, "stream_id", self.channel_id)
-        return self
 
     @property
     def is_shared_message(self) -> bool:
@@ -164,7 +134,7 @@ class SymphonyMessage(Message):
     @property
     def has_mentions(self) -> bool:
         """Check if this message contains user mentions."""
-        return len(self.mentions) > 0 or len(self.mention_ids) > 0
+        return len(self.mentions) > 0
 
     def mentions_user(self, user_id: str) -> bool:
         """Check if this message mentions a specific user.
@@ -178,13 +148,10 @@ class SymphonyMessage(Message):
         user_id_str = str(user_id)
         user_id_int = int(user_id) if user_id_str.isdigit() else None
 
-        # Check mention_ids (string list from base class)
-        if user_id_str in self.mention_ids:
-            return True
-
-        # Check mentions (int list from Symphony)
-        if user_id_int is not None and user_id_int in self.mentions:
-            return True
+        # Check mentions (User objects from base class)
+        for user in self.mentions:
+            if user.id == user_id_str:
+                return True
 
         # Check entity_data for mention entities
         for key, entity in self.entity_data.items():
@@ -300,13 +267,11 @@ class SymphonyMessage(Message):
         return cls(
             id=data.get("messageId", ""),
             message_id=data.get("messageId", ""),
-            stream_id=stream_data.get("streamId", ""),
-            channel_id=stream_data.get("streamId", ""),
+            channel=SymphonyChannel(id=stream_data.get("streamId", "")),
             content=data.get("message", ""),
             message_ml=data.get("message", ""),
             formatted_content=data.get("message", ""),
-            from_user_id=user_data.get("userId"),
-            author_id=str(user_data.get("userId", "")),
+            author=SymphonyUser(id=str(user_data.get("userId", ""))),
             created_at=datetime.fromtimestamp(timestamp / 1000) if timestamp else None,
             data=data.get("data"),
             entity_data=data.get("entityData", {}),
@@ -349,17 +314,17 @@ class SymphonyMessage(Message):
         # Add metadata
         fm.metadata["source_backend"] = "symphony"
         fm.metadata["message_id"] = self.message_id
-        if self.stream_id:
-            fm.metadata["stream_id"] = self.stream_id
-            fm.metadata["channel_id"] = self.stream_id
-        if self.from_user_id:
-            fm.metadata["author_id"] = str(self.from_user_id)
+        if self.channel:
+            fm.metadata["stream_id"] = self.channel.id
+            fm.metadata["channel_id"] = self.channel.id
+        if self.author:
+            fm.metadata["author_id"] = str(self.author.id)
         if self.hashtags:
             fm.metadata["hashtags"] = self.hashtags
         if self.cashtags:
             fm.metadata["cashtags"] = self.cashtags
         if self.mentions:
-            fm.metadata["mention_ids"] = [str(m) for m in self.mentions]
+            fm.metadata["mention_ids"] = [m.id for m in self.mentions]
         if self.entity_data:
             fm.metadata["entity_data"] = self.entity_data
 
@@ -385,6 +350,9 @@ class SymphonyMessage(Message):
         from chatom.format import Format
 
         content = formatted.render(Format.SYMPHONY_MESSAGEML)
+
+        if "stream_id" in kwargs and "channel" not in kwargs:
+            kwargs["channel"] = SymphonyChannel(id=kwargs.pop("stream_id"))
 
         return cls(
             content=content,

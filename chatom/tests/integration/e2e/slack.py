@@ -14,7 +14,7 @@ Usage:
     export SLACK_BOT_TOKEN="xoxb-your-token"
     export SLACK_TEST_CHANNEL_NAME="test-channel"
     export SLACK_TEST_USER_NAME="john.doe"
-    python -m chatom.tests.integration.slack_e2e
+    python -m chatom.tests.integration.e2e.slack
 
 The bot will:
 1. Connect and display bot info
@@ -553,7 +553,7 @@ class SlackE2ETest:
                 .add_text(".\n\nExample: ")
                 .add_italic(f"@{bot_name} hello this is a test message")
                 .add_text("\n\nYou have ")
-                .add_bold("60 seconds")
+                .add_bold("30 seconds")
                 .add_text(" to respond...")
             )
             await self.backend.send_message(self.channel_id, prompt_msg.render(Format.SLACK_MARKDOWN))
@@ -562,7 +562,7 @@ class SlackE2ETest:
 
             # Wait for message with timeout
             try:
-                await asyncio.wait_for(receive_task, timeout=60.0)
+                await asyncio.wait_for(receive_task, timeout=30.0)
             except asyncio.TimeoutError:
                 receive_task.cancel()
                 try:

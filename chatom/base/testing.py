@@ -190,11 +190,13 @@ class MockBackendMixin:
         if message_id is None:
             message_id = self._data.get_next_message_id()
 
+        # Build the message using objects (channel/author) instead of IDs
+        # since channel_id and author_id are now properties
         message_data = {
             "id": message_id,
             "content": content,
-            "channel_id": channel_id,
-            "author_id": author_id,
+            "channel": {"id": channel_id} if channel_id else None,
+            "author": {"id": author_id} if author_id else None,
             "timestamp": timestamp or datetime.now(timezone.utc),
             **extra_fields,
         }
@@ -347,10 +349,12 @@ class MockBackendMixin:
         if message_id is None:
             message_id = self._data.get_next_message_id()
 
+        # Build the message using channel object instead of channel_id
+        # since channel_id is now a property
         message_data = {
             "id": message_id,
             "content": content,
-            "channel_id": channel_id,
+            "channel": {"id": channel_id},
             "timestamp": datetime.now(timezone.utc),
             **kwargs,
         }

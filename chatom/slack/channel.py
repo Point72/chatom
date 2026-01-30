@@ -5,6 +5,8 @@ This module provides the Slack-specific Channel class.
 
 from typing import Optional
 
+from pydantic import model_validator
+
 from chatom.base import Channel, ChannelType, Field
 
 __all__ = ("SlackChannel",)
@@ -103,3 +105,11 @@ class SlackChannel(Channel):
         elif self.is_channel:
             return ChannelType.PUBLIC
         return ChannelType.UNKNOWN
+
+    @model_validator(mode="after")
+    def _sync_channel_type(self) -> "SlackChannel":
+        """Sync channel_type from Slack-specific flags."""
+        # Only update if not already set to a meaningful value
+        if self.channel_type == ChannelType.UNKNOWN:
+            object.__setattr__(self, "channel_type", self.slack_channel_type)
+        return self

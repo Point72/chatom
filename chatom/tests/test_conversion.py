@@ -5,9 +5,6 @@ import pytest
 from chatom import (
     # Backend constants
     DISCORD,
-    EMAIL,
-    IRC,
-    MATRIX,
     SLACK,
     SYMPHONY,
     BackendNotFoundError,
@@ -87,27 +84,6 @@ class TestRegistryFunctions:
         backend_type = get_backend_type(User, SYMPHONY)
         assert backend_type is SymphonyUser
 
-    def test_get_backend_type_email(self):
-        """Test getting Email backend type for User."""
-        from chatom.email import EmailUser
-
-        backend_type = get_backend_type(User, EMAIL)
-        assert backend_type is EmailUser
-
-    def test_get_backend_type_irc(self):
-        """Test getting IRC backend type for User."""
-        from chatom.irc import IRCUser
-
-        backend_type = get_backend_type(User, IRC)
-        assert backend_type is IRCUser
-
-    def test_get_backend_type_matrix(self):
-        """Test getting Matrix backend type for User."""
-        from chatom.matrix import MatrixUser
-
-        backend_type = get_backend_type(User, MATRIX)
-        assert backend_type is MatrixUser
-
     def test_get_backend_type_not_found(self):
         """Test getting backend type for unregistered type."""
         result = get_backend_type(User, "unknown_backend")
@@ -126,9 +102,6 @@ class TestRegistryFunctions:
         assert DISCORD in backends
         assert SLACK in backends
         assert SYMPHONY in backends
-        assert EMAIL in backends
-        assert IRC in backends
-        assert MATRIX in backends
 
     def test_list_backends_for_channel(self):
         """Test listing backends for Channel type."""
@@ -300,35 +273,6 @@ class TestPromote:
         assert symphony_user.company == "ACME Corp"
         assert symphony_user.department == "Engineering"
 
-    def test_promote_user_to_email(self):
-        """Test promoting User to EmailUser."""
-        from chatom.email import EmailUser
-
-        user = User(id="user@example.com", name="Test User", email="user@example.com")
-        email_user = promote(user, EMAIL)
-
-        assert isinstance(email_user, EmailUser)
-        assert email_user.email == "user@example.com"
-
-    def test_promote_user_to_irc(self):
-        """Test promoting User to IRCUser."""
-        from chatom.irc import IRCUser
-
-        user = User(id="testuser", name="Test User", handle="testuser")
-        irc_user = promote(user, IRC)
-
-        assert isinstance(irc_user, IRCUser)
-        assert irc_user.handle == "testuser"
-
-    def test_promote_user_to_matrix(self):
-        """Test promoting User to MatrixUser."""
-        from chatom.matrix import MatrixUser
-
-        user = User(id="@user:server.org", name="Test User", handle="user")
-        matrix_user = promote(user, MATRIX)
-
-        assert isinstance(matrix_user, MatrixUser)
-
     def test_promote_channel_to_discord(self):
         """Test promoting Channel to DiscordChannel."""
         from chatom.discord import DiscordChannel, DiscordChannelType
@@ -437,55 +381,6 @@ class TestDemote:
         assert type(user) is User
         assert user.id == "123456789"
         assert user.name == "Test User"
-
-    def test_demote_email_user(self):
-        """Test demoting EmailUser to User."""
-        from chatom.email import EmailUser
-
-        email_user = EmailUser(
-            id="user@example.com",
-            name="Test User",
-            email="user@example.com",
-            first_name="Test",
-            last_name="User",
-            organization="ACME",
-        )
-        user = demote(email_user)
-
-        assert type(user) is User
-        assert user.id == "user@example.com"
-        assert user.email == "user@example.com"
-
-    def test_demote_irc_user(self):
-        """Test demoting IRCUser to User."""
-        from chatom.irc import IRCUser
-
-        irc_user = IRCUser(
-            id="testuser",
-            name="Test User",
-            nick="testnick",
-            ident="testident",
-            host="test.host.com",
-        )
-        user = demote(irc_user)
-
-        assert type(user) is User
-        assert user.id == "testuser"
-
-    def test_demote_matrix_user(self):
-        """Test demoting MatrixUser to User."""
-        from chatom.matrix import MatrixUser
-
-        matrix_user = MatrixUser(
-            id="@user:server.org",
-            name="Test User",
-            user_id="@user:server.org",
-            homeserver="server.org",
-        )
-        user = demote(matrix_user)
-
-        assert type(user) is User
-        assert user.id == "@user:server.org"
 
     def test_demote_discord_channel(self):
         """Test demoting DiscordChannel to Channel."""
@@ -728,113 +623,6 @@ class TestEdgeCases:
 class TestConversionEdgeCases:
     """Edge case tests for conversion functions."""
 
-    def test_promote_user_to_email(self):
-        """Test promoting user to Email backend."""
-        from chatom.email import EmailUser
-
-        user = User(id="user@example.com", name="Test User", email="user@example.com")
-        email_user = promote(user, EMAIL)
-        assert isinstance(email_user, EmailUser)
-        assert email_user.email == "user@example.com"
-
-    def test_promote_user_to_irc(self):
-        """Test promoting user to IRC backend."""
-        from chatom.irc import IRCUser
-
-        user = User(id="testuser", name="Test User")
-        irc_user = promote(user, IRC)
-        assert isinstance(irc_user, IRCUser)
-
-    def test_promote_user_to_matrix(self):
-        """Test promoting user to Matrix backend."""
-        from chatom.matrix import MatrixUser
-
-        user = User(id="@user:matrix.org", name="Test User")
-        matrix_user = promote(user, MATRIX)
-        assert isinstance(matrix_user, MatrixUser)
-
-    def test_promote_channel_to_email(self):
-        """Test promoting channel to Email backend."""
-        from chatom.email import EmailChannel
-
-        channel = Channel(id="INBOX", name="INBOX")
-        email_channel = promote(channel, EMAIL)
-        assert isinstance(email_channel, EmailChannel)
-
-    def test_promote_channel_to_irc(self):
-        """Test promoting channel to IRC backend."""
-        from chatom.irc import IRCChannel
-
-        channel = Channel(id="#general", name="#general")
-        irc_channel = promote(channel, IRC)
-        assert isinstance(irc_channel, IRCChannel)
-
-    def test_promote_channel_to_matrix(self):
-        """Test promoting channel to Matrix backend."""
-        from chatom.matrix import MatrixChannel
-
-        channel = Channel(id="!room:matrix.org", name="Test Room")
-        matrix_channel = promote(channel, MATRIX)
-        assert isinstance(matrix_channel, MatrixChannel)
-
-    def test_validate_for_email_backend(self):
-        """Test validate_for_backend with Email backend."""
-        user = User(id="user@example.com", name="Test")
-        result = validate_for_backend(user, EMAIL)
-        assert result.valid
-
-    def test_validate_for_irc_backend(self):
-        """Test validate_for_backend with IRC backend."""
-        user = User(id="testuser", name="Test")
-        result = validate_for_backend(user, IRC)
-        assert result.valid
-
-    def test_validate_for_matrix_backend(self):
-        """Test validate_for_backend with Matrix backend."""
-        user = User(id="@user:matrix.org", name="Test")
-        result = validate_for_backend(user, MATRIX)
-        assert result.valid
-
-    def test_can_promote_to_email(self):
-        """Test can_promote with Email backend."""
-        user = User(id="user@example.com", name="Test")
-        assert can_promote(user, EMAIL)
-
-    def test_can_promote_to_irc(self):
-        """Test can_promote with IRC backend."""
-        user = User(id="testuser", name="Test")
-        assert can_promote(user, IRC)
-
-    def test_can_promote_to_matrix(self):
-        """Test can_promote with Matrix backend."""
-        user = User(id="@user:matrix.org", name="Test")
-        assert can_promote(user, MATRIX)
-
-    def test_demote_email_user(self):
-        """Test demoting EmailUser to base User."""
-        from chatom.email import EmailUser
-
-        email_user = EmailUser(id="user@example.com", name="Test", handle="user@example.com", email="user@example.com")
-        base_user = demote(email_user)
-        assert isinstance(base_user, User)
-        assert base_user.id == "user@example.com"
-
-    def test_demote_irc_user(self):
-        """Test demoting IRCUser to base User."""
-        from chatom.irc import IRCUser
-
-        irc_user = IRCUser(id="testuser", name="Test", handle="testuser", nick="testuser")
-        base_user = demote(irc_user)
-        assert isinstance(base_user, User)
-
-    def test_demote_matrix_user(self):
-        """Test demoting MatrixUser to base User."""
-        from chatom.matrix import MatrixUser
-
-        matrix_user = MatrixUser(id="@user:matrix.org", name="Test", handle="@user:matrix.org")
-        base_user = demote(matrix_user)
-        assert isinstance(base_user, User)
-
     def test_promote_presence_to_discord(self):
         """Test promoting Presence to Discord."""
         from chatom.discord import DiscordPresence
@@ -859,14 +647,6 @@ class TestConversionEdgeCases:
         symphony_presence = promote(presence, SYMPHONY)
         assert isinstance(symphony_presence, SymphonyPresence)
 
-    def test_promote_presence_to_matrix(self):
-        """Test promoting Presence to Matrix."""
-        from chatom.matrix import MatrixPresence
-
-        presence = Presence(user_id="@user:matrix.org", status=PresenceStatus.ONLINE)
-        matrix_presence = promote(presence, MATRIX)
-        assert isinstance(matrix_presence, MatrixPresence)
-
     def test_demote_discord_presence(self):
         """Test demoting DiscordPresence to base Presence."""
         from chatom.discord import DiscordPresence
@@ -888,24 +668,6 @@ class TestConversionEdgeCases:
         """Test validate_for_backend for Channel to Symphony."""
         channel = Channel(id="stream123", name="Test Stream")
         result = validate_for_backend(channel, SYMPHONY)
-        assert result.valid
-
-    def test_validate_channel_for_email(self):
-        """Test validate_for_backend for Channel to Email."""
-        channel = Channel(id="INBOX", name="Inbox")
-        result = validate_for_backend(channel, EMAIL)
-        assert result.valid
-
-    def test_validate_channel_for_irc(self):
-        """Test validate_for_backend for Channel to IRC."""
-        channel = Channel(id="#general", name="#general")
-        result = validate_for_backend(channel, IRC)
-        assert result.valid
-
-    def test_validate_channel_for_matrix(self):
-        """Test validate_for_backend for Channel to Matrix."""
-        channel = Channel(id="!room:matrix.org", name="Test")
-        result = validate_for_backend(channel, MATRIX)
         assert result.valid
 
 

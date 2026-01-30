@@ -3,10 +3,15 @@
 This module provides the base Channel class representing a chat channel or room.
 """
 
+from __future__ import annotations
+
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .base import Field, Identifiable
+
+if TYPE_CHECKING:
+    pass
 
 __all__ = ("Channel", "ChannelType")
 
@@ -49,7 +54,8 @@ class Channel(Identifiable):
         channel_type: Type of the channel (public, private, etc.).
         is_archived: Whether the channel is archived.
         member_count: Number of members in the channel.
-        parent_id: ID of the parent channel (for threads/subchanels).
+        parent: Parent channel (for threads/subchannels).
+        parent_id: ID of the parent channel (derived from parent).
     """
 
     topic: str = Field(
@@ -68,10 +74,19 @@ class Channel(Identifiable):
         default=None,
         description="Number of members in the channel.",
     )
-    parent_id: str = Field(
-        default="",
-        description="ID of the parent channel (for threads/subchannels).",
+    parent: Optional["Channel"] = Field(
+        default=None,
+        description="Parent channel (for threads/subchannels).",
     )
+
+    @property
+    def parent_id(self) -> str:
+        """Get the parent channel's ID.
+
+        Returns:
+            str: The parent channel ID or empty string if no parent.
+        """
+        return self.parent.id if self.parent else ""
 
     @property
     def is_thread(self) -> bool:
@@ -117,3 +132,14 @@ class Channel(Identifiable):
             bool: True if this is a private channel.
         """
         return self.channel_type == ChannelType.PRIVATE
+
+    @property
+    def is_resolvable(self) -> bool:
+        """Check if this channel can be resolved by a backend.
+
+        A channel is resolvable if it has an id or name.
+
+        Returns:
+            bool: True if the channel can potentially be resolved.
+        """
+        return bool(self.id or self.name)

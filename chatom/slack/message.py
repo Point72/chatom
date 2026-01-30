@@ -6,7 +6,9 @@ This module provides the Slack-specific Message class.
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from chatom.base import Field, Message
+from chatom.base import Field, Message, Organization, Thread
+
+from .user import SlackUser
 
 if TYPE_CHECKING:
     from chatom.format import FormattedMessage
@@ -50,60 +52,29 @@ class SlackMessage(Message):
 
     Based on the Slack API message structure.
 
+    Note: Use the inherited `channel` field for the SlackChannel object,
+    and `channel_id` for the channel ID string. The `sender_id` field is
+    deprecated - use `author` or `author_id` instead.
+
     Attributes:
-        ts: The message timestamp (unique identifier).
-        channel: The channel ID.
-        sender_id: The user ID who sent the message (Slack-specific).
         team: The team/workspace ID.
         subtype: The message subtype.
-        bot_id: Bot ID if sent by a bot.
-        app_id: App ID if sent by an app.
         blocks: Slack Block Kit blocks.
         text: The message text (may differ from content due to mentions).
-        thread_ts: Thread parent timestamp.
-        reply_count: Number of replies in thread.
-        reply_users_count: Number of users in thread.
         latest_reply: Timestamp of latest reply.
         reply_users: List of user IDs who replied.
         is_locked: Whether the thread is locked.
         subscribed: Whether user is subscribed to thread.
         last_read: Timestamp of last read message in thread.
-        reactions: List of reactions on the message.
         files: List of attached files.
         upload: Whether this is a file upload message.
         display_as_bot: Whether to display as bot.
         edited: Edit information if message was edited.
-        client_msg_id: Client-side message ID.
-        metadata: Message metadata.
     """
 
-    ts: str = Field(
-        default="",
-        description="The message timestamp (unique identifier).",
-    )
-    channel: str = Field(
-        default="",
-        description="The channel ID.",
-    )
-    sender_id: Optional[str] = Field(
-        default=None,
-        description="The Slack user ID who sent the message.",
-    )
-    team: Optional[str] = Field(
-        default=None,
-        description="The team/workspace ID.",
-    )
     subtype: Optional[SlackMessageSubtype] = Field(
         default=None,
         description="The message subtype.",
-    )
-    bot_id: Optional[str] = Field(
-        default=None,
-        description="Bot ID if sent by a bot.",
-    )
-    app_id: Optional[str] = Field(
-        default=None,
-        description="App ID if sent by an app.",
     )
     blocks: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -113,23 +84,15 @@ class SlackMessage(Message):
         default="",
         description="The message text.",
     )
-    thread_ts: Optional[str] = Field(
-        default=None,
-        description="Thread parent timestamp.",
-    )
     reply_count: int = Field(
         default=0,
         description="Number of replies in thread.",
-    )
-    reply_users_count: int = Field(
-        default=0,
-        description="Number of users in thread.",
     )
     latest_reply: Optional[str] = Field(
         default=None,
         description="Timestamp of latest reply.",
     )
-    reply_users: List[str] = Field(
+    reply_users: List[SlackUser] = Field(
         default_factory=list,
         description="List of user IDs who replied.",
     )
@@ -161,19 +124,45 @@ class SlackMessage(Message):
         default=None,
         description="Edit information if message was edited.",
     )
-    client_msg_id: Optional[str] = Field(
-        default=None,
-        description="Client-side message ID.",
-    )
-    metadata: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Message metadata.",
-    )
+
+    # Backend-compatibility properties
+
+    @property
+    def ts(self) -> Optional[str]:
+        """Get the message timestamp (ts)."""
+        return self.id or None
+
+    @property
+    def team(self) -> Optional[Organization]:
+        """Get the team/workspace ID."""
+        return self.organization if self.organization else None
+
+    @property
+    def sender_id(self) -> Optional[str]:
+        """Get sender ID (deprecated - use author_id instead)."""
+        return self.author_id or None
+
+    @property
+    def bot_id(self) -> Optional[str]:
+        """Get bot ID from author if author is a bot.
+
+        For bots, the bot_id is the same as the author's id.
+        """
+        if self.author and self.author.is_bot:
+            return self.author.id
+        return None
+
+    @property
+    def app_id(self) -> Optional[str]:
+        """Get app ID from author if available."""
+        if self.author:
+            return self.author.app_id
+        return None
 
     @property
     def is_thread_reply(self) -> bool:
         """Check if this message is a reply in a thread."""
-        return self.thread_ts is not None and self.ts != self.thread_ts
+        return self.thread is not None and self.id != self.thread.id
 
     @property
     def is_thread_parent(self) -> bool:
@@ -221,24 +210,21 @@ class SlackMessage(Message):
         if self.text and mention_format in self.text:
             return True
 
-        # Check mentions list if populated
-        if self.mentions and user_id in self.mentions:
-            return True
-
-        # Check mention_ids list if populated
-        if self.mention_ids and user_id in self.mention_ids:
-            return True
+        # Check mentions list (User objects) if populated
+        for user in self.mentions:
+            if user.id == user_id:
+                return True
 
         return False
 
     @property
     def permalink(self) -> Optional[str]:
-        """Get the message permalink if channel and ts are available."""
-        if self.channel and self.ts:
+        """Get the message permalink if channel_id and ts are available."""
+        if self.channel:
             # Note: This is a simplified permalink format
             # Real permalinks require the workspace domain
-            ts_no_dot = self.ts.replace(".", "")
-            return f"https://slack.com/archives/{self.channel}/p{ts_no_dot}"
+            ts_no_dot = self.id.replace(".", "")
+            return f"https://slack.com/archives/{self.channel.id}/p{ts_no_dot}"
         return None
 
     def to_formatted(self) -> "FormattedMessage":
@@ -273,16 +259,16 @@ class SlackMessage(Message):
 
         # Add metadata
         fm.metadata["source_backend"] = "slack"
-        fm.metadata["message_id"] = self.id or self.ts
-        fm.metadata["ts"] = self.ts
-        if self.sender_id:
-            fm.metadata["author_id"] = self.sender_id
+        fm.metadata["message_id"] = self.id
+        fm.metadata["ts"] = self.id
+        if self.author:
+            fm.metadata["author_id"] = self.author.id
         if self.channel:
-            fm.metadata["channel_id"] = self.channel
-        if self.thread_ts:
-            fm.metadata["thread_ts"] = self.thread_ts
-        if self.team:
-            fm.metadata["team_id"] = self.team
+            fm.metadata["channel_id"] = self.channel.id
+        if self.thread:
+            fm.metadata["thread_ts"] = self.thread.id
+        if self.organization:
+            fm.metadata["team_id"] = self.organization.id
 
         return fm
 
@@ -324,6 +310,9 @@ class SlackMessage(Message):
         Returns:
             A SlackMessage instance.
         """
+        from chatom.slack.channel import SlackChannel
+        from chatom.slack.user import SlackUser
+
         subtype = None
         if "subtype" in data:
             try:
@@ -331,27 +320,51 @@ class SlackMessage(Message):
             except ValueError:
                 pass
 
+        # Create author User object with bot info
+        # For bots, the bot_id from the API becomes the user's id
+        user_id = data.get("user", "")
+        bot_id = data.get("bot_id")
+        app_id = data.get("app_id")
+        is_bot = bot_id is not None
+        # Use user_id if available, otherwise use bot_id as the id
+        author_id = user_id or bot_id or ""
+        author = (
+            SlackUser(
+                id=author_id,
+                name="",  # Name not available in message data
+                is_bot=is_bot,
+                app_id=app_id,
+            )
+            if author_id
+            else None
+        )
+
+        channel_id = data.get("channel", "")
+        channel = SlackChannel(id=channel_id) if channel_id else None
+
+        organization_id = data.get("team", "")
+        organization = Organization(id=organization_id) if organization_id else None
+
+        thread_id = data.get("thread_ts")
+        thread = Thread(id=thread_id) if thread_id else None
+
+        reply_user_ids = data.get("reply_users", [])
+        reply_users = [SlackUser(id=uid) for uid in reply_user_ids]
+
         return cls(
-            id=data.get("client_msg_id", data.get("ts", "")),
-            ts=data.get("ts", ""),
-            channel=data.get("channel", ""),
-            channel_id=data.get("channel", ""),
-            sender_id=data.get("user"),
-            author_id=data.get("user", ""),
-            team=data.get("team"),
+            id=data["ts"],
+            channel=channel,
+            author=author,
+            organization=organization,
             subtype=subtype,
-            bot_id=data.get("bot_id"),
-            app_id=data.get("app_id"),
-            is_bot=data.get("bot_id") is not None,
+            is_bot=is_bot,
             blocks=data.get("blocks", []),
             text=data.get("text", ""),
             content=data.get("text", ""),
-            thread_ts=data.get("thread_ts"),
-            thread_id=data.get("thread_ts", ""),
+            thread=thread,
             reply_count=data.get("reply_count", 0),
-            reply_users_count=data.get("reply_users_count", 0),
             latest_reply=data.get("latest_reply"),
-            reply_users=data.get("reply_users", []),
+            reply_users=reply_users,
             is_locked=data.get("is_locked", False),
             subscribed=data.get("subscribed", False),
             last_read=data.get("last_read"),
@@ -359,7 +372,6 @@ class SlackMessage(Message):
             upload=data.get("upload", False),
             display_as_bot=data.get("display_as_bot", False),
             edited=data.get("edited"),
-            client_msg_id=data.get("client_msg_id"),
             raw=data,
             backend="slack",
         )

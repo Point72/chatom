@@ -9,6 +9,7 @@ from chatom import (
     BackendRegistry,
     Channel,
     Message,
+    Thread,
     User,
     get_backend,
     get_backend_format,
@@ -441,27 +442,6 @@ class TestBuiltinBackends:
         assert SymphonyBackend.name == "symphony"
         assert SymphonyBackend.format == Format.SYMPHONY_MESSAGEML
 
-    def test_matrix_backend_exists(self):
-        """Test Matrix backend can be imported."""
-        from chatom.matrix import MatrixBackend
-
-        assert MatrixBackend.name == "matrix"
-        assert MatrixBackend.format == Format.HTML
-
-    def test_irc_backend_exists(self):
-        """Test IRC backend can be imported."""
-        from chatom.irc import IRCBackend
-
-        assert IRCBackend.name == "irc"
-        assert IRCBackend.format == Format.PLAINTEXT
-
-    def test_email_backend_exists(self):
-        """Test Email backend can be imported."""
-        from chatom.email import EmailBackend
-
-        assert EmailBackend.name == "email"
-        assert EmailBackend.format == Format.HTML
-
     @pytest.mark.asyncio
     async def test_discord_backend_connect(self):
         """Test Discord backend connect/disconnect with mock."""
@@ -527,34 +507,6 @@ class TestBackendMentionMethods:
         channel = Channel(id="C789012", name="general")
         mention = backend.mention_channel(channel)
         assert mention == "<#C789012>"
-
-    def test_matrix_mention_user(self):
-        """Test Matrix backend mention_user method."""
-        from chatom.matrix import MatrixBackend
-
-        backend = MatrixBackend()
-        user = User(id="@alice:matrix.org", name="Alice")
-        mention = backend.mention_user(user)
-        assert mention == "@alice:matrix.org"
-
-    def test_irc_mention_user(self):
-        """Test IRC backend mention_user method."""
-        from chatom.irc import IRCBackend
-
-        backend = IRCBackend()
-        user = User(id="alice", name="alice")
-        mention = backend.mention_user(user)
-        assert mention == "alice"
-
-    def test_email_mention_user(self):
-        """Test Email backend mention_user method."""
-        from chatom.email import EmailBackend
-
-        backend = EmailBackend()
-        user = User(id="alice@example.com", name="Alice", email="alice@example.com")
-        mention = backend.mention_user(user)
-        assert "mailto:" in mention
-        assert "alice@example.com" in mention
 
 
 class TestBackendLookupMethods:
@@ -664,14 +616,6 @@ class TestFetchMessages:
         # With __getattr__, we can access fetch_messages dynamically
         assert callable(sync.fetch_messages)
 
-    def test_irc_fetch_messages_returns_empty_list(self):
-        """Test that IRC fetch_messages returns empty list (no history)."""
-        from chatom.irc import IRCBackend
-
-        backend = IRCBackend()
-        messages = backend.sync.fetch_messages("##general")
-        assert messages == []
-
     @pytest.mark.asyncio
     async def test_discord_fetch_messages_requires_connection(self):
         """Test that Discord fetch_messages requires connection."""
@@ -698,24 +642,6 @@ class TestFetchMessages:
         backend = SymphonyBackend()
         with pytest.raises(RuntimeError):  # Not connected
             await backend.fetch_messages("stream123")
-
-    @pytest.mark.asyncio
-    async def test_matrix_fetch_messages_requires_connection(self):
-        """Test that Matrix fetch_messages requires connection."""
-        from chatom.matrix import MatrixBackend
-
-        backend = MatrixBackend()
-        with pytest.raises(RuntimeError):  # Not connected
-            await backend.fetch_messages("!room:matrix.org")
-
-    @pytest.mark.asyncio
-    async def test_email_fetch_messages_requires_connection(self):
-        """Test that Email fetch_messages requires connection."""
-        from chatom.email import EmailBackend
-
-        backend = EmailBackend()
-        with pytest.raises(RuntimeError):  # IMAP not connected
-            await backend.fetch_messages("INBOX")
 
     def test_custom_backend_fetch_messages_implementation(self):
         """Test custom backend with implemented fetch_messages."""
@@ -939,22 +865,6 @@ class TestPresenceMethods:
         sync = SyncHelper(backend)
         assert callable(sync.set_presence)
 
-    def test_irc_get_presence_returns_none(self):
-        """Test that IRC get_presence returns None (no presence support)."""
-        from chatom.irc import IRCBackend
-
-        backend = IRCBackend()
-        presence = backend.sync.get_presence("nick")
-        assert presence is None
-
-    def test_email_get_presence_returns_none(self):
-        """Test that Email get_presence returns None (no presence support)."""
-        from chatom.email import EmailBackend
-
-        backend = EmailBackend()
-        presence = backend.sync.get_presence("user@example.com")
-        assert presence is None
-
     @pytest.mark.asyncio
     async def test_discord_get_presence_requires_connection(self):
         """Test that Discord get_presence requires connection or returns cached presence."""
@@ -987,16 +897,6 @@ class TestPresenceMethods:
         assert result is None or hasattr(result, "status")
 
     @pytest.mark.asyncio
-    async def test_matrix_get_presence_requires_connection(self):
-        """Test that Matrix get_presence requires connection or returns None."""
-        from chatom.matrix import MatrixBackend
-
-        backend = MatrixBackend()
-        # Matrix returns None when not connected
-        result = await backend.get_presence("@user:matrix.org")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_discord_set_presence_requires_connection(self):
         """Test that Discord set_presence requires connection."""
         from chatom.discord import DiscordBackend
@@ -1022,33 +922,6 @@ class TestPresenceMethods:
         backend = SymphonyBackend()
         with pytest.raises(RuntimeError):  # Not connected
             await backend.set_presence("AVAILABLE")
-
-    @pytest.mark.asyncio
-    async def test_matrix_set_presence_requires_connection(self):
-        """Test that Matrix set_presence requires connection."""
-        from chatom.matrix import MatrixBackend
-
-        backend = MatrixBackend()
-        with pytest.raises(RuntimeError):  # Not connected
-            await backend.set_presence("online")
-
-    @pytest.mark.asyncio
-    async def test_irc_set_presence_requires_connection(self):
-        """Test that IRC set_presence requires connection."""
-        from chatom.irc import IRCBackend
-
-        backend = IRCBackend()
-        with pytest.raises(RuntimeError):  # Not connected
-            await backend.set_presence("away", "Gone fishing")
-
-    @pytest.mark.asyncio
-    async def test_email_set_presence_raises_not_implemented(self):
-        """Test that Email set_presence raises NotImplementedError."""
-        from chatom.email import EmailBackend
-
-        backend = EmailBackend()
-        with pytest.raises(NotImplementedError):
-            await backend.set_presence("available")
 
     def test_custom_backend_get_presence_implementation(self):
         """Test custom backend with implemented get_presence."""
@@ -1188,10 +1061,10 @@ class TestReplyInThread:
 
             async def send_message(self, channel_id: str, content: str, thread_id: str = None, **kwargs):
                 self.last_thread_id = thread_id
-                return Message(id="reply", content=content, thread_id=thread_id)
+                return Message(id="reply", content=content, thread=Thread(id=thread_id) if thread_id else None)
 
         backend = ThreadBackend()
-        msg = Message(id="msg1", content="Hello", channel_id="chan1", thread_id="thread123")
+        msg = Message(id="msg1", content="Hello", channel=Channel(id="chan1"), thread=Thread(id="thread123"))
         reply = await backend.reply_in_thread(msg, "Reply content")
 
         assert backend.last_thread_id == "thread123"
@@ -1223,10 +1096,10 @@ class TestReplyInThread:
 
             async def send_message(self, channel_id: str, content: str, thread_id: str = None, **kwargs):
                 self.last_thread_id = thread_id
-                return Message(id="reply", content=content, thread_id=thread_id)
+                return Message(id="reply", content=content, thread=Thread(id=thread_id) if thread_id else None)
 
         backend = ThreadBackend()
-        msg = Message(id="msg1", content="Hello", channel_id="chan1")
+        msg = Message(id="msg1", content="Hello", channel=Channel(id="chan1"))
         _ = await backend.reply_in_thread(msg, "Reply content")
 
         # When no thread_id, uses message id as thread_id

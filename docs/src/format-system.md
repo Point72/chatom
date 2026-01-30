@@ -367,7 +367,7 @@ slack_msg = SlackMessage(
     channel="C12345",
     user="U12345",
     text="Hello!",
-    thread_ts="1234567890.000000",
+    thread=Thread(id="1234567890.000000"),
 )
 
 formatted = slack_msg.to_formatted()

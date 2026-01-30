@@ -7,7 +7,7 @@ for use in tests without requiring actual Slack API credentials.
 from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from ..base import PresenceStatus
+from ..base import PresenceStatus, Thread
 from .backend import SlackBackend
 from .channel import SlackChannel
 from .message import SlackMessage
@@ -163,7 +163,6 @@ class MockSlackBackend(SlackBackend):
             content=content,
             channel_id=channel_id,
             author_id=user_id,
-            sender_id=user_id,
             timestamp=timestamp or datetime.now(),
             ts=message_id,
         )
@@ -459,12 +458,10 @@ class MockSlackBackend(SlackBackend):
 
         message = SlackMessage(
             id=ts,
-            ts=ts,
             content=content,
-            channel=channel_id,
-            channel_id=channel_id,
+            channel=SlackChannel(id=channel_id),
             created_at=datetime.now(),
-            thread_ts=kwargs.get("thread_ts"),
+            thread=Thread(id=kwargs.get("thread_ts")) if kwargs.get("thread_ts") else None,
         )
 
         self._sent_messages.append(message)
@@ -495,12 +492,11 @@ class MockSlackBackend(SlackBackend):
         """
         messages = self._mock_messages.get(channel_id, [])
         for i, msg in enumerate(messages):
-            if msg.ts == message_id:
+            if msg.id == message_id:
                 edited = SlackMessage(
                     id=msg.id,
-                    ts=msg.ts,
                     content=content,
-                    channel=channel_id,
+                    channel=SlackChannel(id=channel_id),
                     created_at=msg.created_at,
                     is_edited=True,
                 )

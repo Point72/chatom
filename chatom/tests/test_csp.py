@@ -19,7 +19,7 @@ pytest.importorskip("csp")
 import csp
 from csp import ts
 
-from chatom.base import Channel, Message
+from chatom.base import Channel, Message, User
 from chatom.csp import HAS_CSP, BackendAdapter, message_reader, message_writer
 from chatom.csp.nodes import MessageReaderPushAdapterImpl, _send_messages_thread
 
@@ -80,9 +80,9 @@ class MockBackendForCSP:
         """Send a message."""
         msg = Message(
             id=f"msg_{len(_mock_sent_messages)}",
-            channel_id=channel_id,
+            channel=Channel(id=channel_id),
             content=content,
-            author_id=self._bot_user_id,
+            author=User(id=self._bot_user_id),
         )
         _mock_sent_messages.append(msg)
         return msg
@@ -322,7 +322,7 @@ class TestSendMessagesThread:
         thread.start()
 
         # Send a message
-        msg = Message(channel_id="C123", content="Hello!")
+        msg = Message(channel=Channel(id="C123"), content="Hello!")
         queue.put(msg)
 
         # Send stop signal
@@ -347,7 +347,7 @@ class TestSendMessagesThread:
 
         # Send messages
         for i in range(5):
-            msg = Message(channel_id="C123", content=f"Message {i}")
+            msg = Message(channel=Channel(id="C123"), content=f"Message {i}")
             queue.put(msg)
 
         # Send stop signal
@@ -373,7 +373,7 @@ class TestCSPGraphExecution:
 
         @csp.graph
         def test_graph():
-            msg = csp.const(Message(channel_id="C123", content="Test message"))
+            msg = csp.const(Message(channel=Channel(id="C123"), content="Test message"))
             adapter.publish(msg)
 
         csp.run(
@@ -404,12 +404,12 @@ class TestCSPGraphExecution:
                 csp.schedule_alarm(
                     a_msg,
                     timedelta(milliseconds=10),
-                    Message(channel_id="C1", content="First"),
+                    Message(channel=Channel(id="C1"), content="First"),
                 )
                 csp.schedule_alarm(
                     a_msg,
                     timedelta(milliseconds=20),
-                    Message(channel_id="C2", content="Second"),
+                    Message(channel=Channel(id="C2"), content="Second"),
                 )
 
             if csp.ticked(a_msg):
@@ -490,7 +490,7 @@ class TestMessageWriterNode:
 
         @csp.graph
         def test_graph():
-            msg = csp.const(Message(channel_id="C123", content="Writer test"))
+            msg = csp.const(Message(channel=Channel(id="C123"), content="Writer test"))
             message_writer(mock_backend, msg)
 
         csp.run(
@@ -612,7 +612,7 @@ class TestIntegrationScenarios:
 
         @csp.graph
         def publish_bot():
-            msg = csp.const(Message(channel_id="C123", content="Hello from bot"))
+            msg = csp.const(Message(channel=Channel(id="C123"), content="Hello from bot"))
             adapter.publish(msg)
 
         csp.run(
@@ -646,7 +646,7 @@ class TestIntegrationScenarios:
                     csp.schedule_alarm(
                         alarm,
                         timedelta(milliseconds=10 * (i + 1)),
-                        Message(channel_id="C123", content=f"Scheduled {i}"),
+                        Message(channel=Channel(id="C123"), content=f"Scheduled {i}"),
                     )
 
             if csp.ticked(alarm):
