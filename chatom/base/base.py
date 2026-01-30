@@ -52,6 +52,11 @@ class Identifiable(BaseModel):
     """Base class for models with an identifier.
 
     Provides common id and name fields that most chat entities have.
+
+    Objects can be created with partial information (e.g., just a name)
+    and later resolved by a backend to populate missing fields like id.
+    Use the `is_complete` property to check if an object has all required
+    fields populated.
     """
 
     id: str = Field(
@@ -62,3 +67,27 @@ class Identifiable(BaseModel):
         default="",
         description="Human-readable name or display name.",
     )
+
+    @property
+    def is_complete(self) -> bool:
+        """Check if this object has all required fields populated.
+
+        An object is considered complete if it has an id. Subclasses may
+        override this to add additional requirements.
+
+        Returns:
+            bool: True if the object is complete.
+        """
+        return bool(self.id)
+
+    @property
+    def is_resolvable(self) -> bool:
+        """Check if this object has enough info to be resolved by a backend.
+
+        An object is resolvable if it has at least an id OR a name that
+        can be used to look it up.
+
+        Returns:
+            bool: True if the object can potentially be resolved.
+        """
+        return bool(self.id or self.name)

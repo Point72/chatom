@@ -50,3 +50,14 @@ class Thread(Identifiable):
         default=None,
         description="When the last message was posted.",
     )
+
+    @property
+    def is_resolvable(self) -> bool:
+        """Check if this thread can be resolved by a backend.
+
+        A thread is resolvable if it has an id or a parent_message_id.
+
+        Returns:
+            bool: True if the thread can potentially be resolved.
+        """
+        return bool(self.id or self.parent_message_id)

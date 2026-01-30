@@ -27,7 +27,7 @@ Usage:
     export SYMPHONY_BOT_COMBINED_CERT_PATH="/path/to/combined.pem"
     export SYMPHONY_TEST_ROOM_NAME="E2E Test Room"
     export SYMPHONY_TEST_USER_NAME="jsmith"
-    python -m chatom.tests.integration.symphony_e2e
+    python -m chatom.tests.integration.e2e.symphony
 
 The bot will:
 1. Connect and display bot info
@@ -652,7 +652,7 @@ class SymphonyE2ETest:
                 .add_text(".\n\nExample: ")
                 .add_italic(f"@{bot_display_name} hello this is a test message")
                 .add_text("\n\nYou have ")
-                .add_bold("60 seconds")
+                .add_bold("30 seconds")
                 .add_text(" to respond...")
             )
             prompt_result = await self.backend.send_message(self.stream_id, prompt_msg.render(Format.SYMPHONY_MESSAGEML))
@@ -664,7 +664,7 @@ class SymphonyE2ETest:
             # skip_own=True and skip_history=True are defaults, so we just get user messages
             received_message = None
             try:
-                async with asyncio.timeout(60.0):
+                async with asyncio.timeout(30.0):
                     async for message in self.backend.stream_messages(channel_id=self.stream_id):
                         # First message from a user after stream started - that's the one we want
                         received_message = message

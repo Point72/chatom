@@ -24,17 +24,14 @@ Each test will:
 Tests are run as standalone Python scripts:
 
 ```bash
-python -m chatom.tests.integration.<backend>_e2e
+python -m chatom.tests.integration.e2e.<backend>
 ```
 
 For example:
 ```bash
-python -m chatom.tests.integration.discord_e2e
-python -m chatom.tests.integration.slack_e2e
-python -m chatom.tests.integration.symphony_e2e
-python -m chatom.tests.integration.matrix_e2e
-python -m chatom.tests.integration.irc_e2e
-python -m chatom.tests.integration.email_e2e
+python -m chatom.tests.integration.e2e.discord
+python -m chatom.tests.integration.e2e.slack
+python -m chatom.tests.integration.e2e.symphony
 ```
 
 ---
@@ -91,7 +88,7 @@ then right-click on channels/users/servers to copy their IDs.
 ### Run
 
 ```bash
-python -m chatom.tests.integration.discord_e2e
+python -m chatom.tests.integration.e2e.discord
 ```
 
 ### What's Tested
@@ -162,7 +159,7 @@ export SLACK_APP_TOKEN="xapp-your-app-token"  # Optional, for Socket Mode
 ### Run
 
 ```bash
-python -m chatom.tests.integration.slack_e2e
+python -m chatom.tests.integration.e2e.slack
 ```
 
 ### What's Tested
@@ -255,7 +252,7 @@ The test will automatically look up the room by name to get its stream ID.
 ### Run
 
 ```bash
-python -m chatom.tests.integration.symphony_e2e
+python -m chatom.tests.integration.e2e.symphony
 ```
 
 ### What's Tested
@@ -278,208 +275,6 @@ python -m chatom.tests.integration.symphony_e2e
 | DM/IM Creation | Create 1:1 DMs and multi-party IMs |
 | Room Creation | Create private rooms |
 | Inbound Messages | Receive messages via datafeed, detect bot mentions |
-
----
-
-## Matrix Integration Test
-
-### Prerequisites
-
-1. **Matrix Homeserver** account
-2. **Access Token** for your bot user
-3. **Bot joined to test room**
-
-### Getting an Access Token
-
-```bash
-# Using the Matrix API
-curl -X POST "https://matrix.example.com/_matrix/client/r0/login" \
-  -H "Content-Type: application/json" \
-  -d '{"type":"m.login.password","user":"@bot:example.com","password":"yourpassword"}'
-```
-
-### Environment Variables
-
-```bash
-export MATRIX_HOMESERVER_URL="https://matrix.example.com"
-export MATRIX_ACCESS_TOKEN="syt_your_access_token"
-export MATRIX_USER_ID="@mybot:example.com"
-export MATRIX_TEST_ROOM_ID="!abc123:example.com"
-export MATRIX_TEST_USER_ID="@testuser:example.com"
-export MATRIX_DEVICE_ID="MYDEVICE"  # Optional
-```
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `MATRIX_HOMESERVER_URL` | Yes | Homeserver URL |
-| `MATRIX_ACCESS_TOKEN` | Yes | Bot's access token |
-| `MATRIX_USER_ID` | Yes | Bot's Matrix ID (@user:server) |
-| `MATRIX_TEST_ROOM_ID` | Yes | Room ID for tests (!room:server) |
-| `MATRIX_TEST_USER_ID` | Yes | User ID for mention tests |
-| `MATRIX_DEVICE_ID` | No | Device ID for E2EE |
-
-### Run
-
-```bash
-python -m chatom.tests.integration.matrix_e2e
-```
-
-### What's Tested
-
-| Feature | Test Description |
-|---------|-----------------|
-| Connection | Connect to homeserver |
-| Plain Messages | Send simple text |
-| HTML Messages | Native HTML formatting |
-| Format System | Convert FormattedMessage to HTML |
-| Fetch User | Look up user profile |
-| Mentions | Matrix user pills |
-| Reactions | Add/remove emoji annotations |
-| Rich Content | HTML tables |
-| Message History | Fetch room messages |
-| Presence | Get/set presence |
-
----
-
-## IRC Integration Test
-
-### Prerequisites
-
-1. **IRC Server** to connect to (e.g., Libera.Chat)
-2. **Registered Nickname** (optional but recommended)
-3. **Test Channel** where bot can join
-
-### Environment Variables
-
-```bash
-export IRC_SERVER="irc.libera.chat"
-export IRC_PORT="6697"
-export IRC_NICKNAME="chatom-test-bot"
-export IRC_TEST_CHANNEL="#chatom-test"
-export IRC_USE_SSL="true"
-export IRC_NICKSERV_PASSWORD="your-nickserv-password"  # Optional
-```
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `IRC_SERVER` | Yes | IRC server hostname |
-| `IRC_PORT` | No | Server port (default: 6667) |
-| `IRC_NICKNAME` | Yes | Bot's nickname |
-| `IRC_TEST_CHANNEL` | Yes | Channel for tests (with #) |
-| `IRC_USE_SSL` | No | Use SSL (default: false) |
-| `IRC_PASSWORD` | No | Server password |
-| `IRC_NICKSERV_PASSWORD` | No | NickServ password |
-
-### Run
-
-```bash
-python -m chatom.tests.integration.irc_e2e
-```
-
-### What's Tested
-
-| Feature | Test Description |
-|---------|-----------------|
-| Connection | Connect to IRC server |
-| Plain Messages | Send PRIVMSG |
-| Formatted Messages | Rendered as plain text |
-| Actions | /me messages (CTCP ACTION) |
-| Notices | NOTICE messages |
-| User Highlights | "nick: message" format |
-| Channel Operations | JOIN and PART |
-| Rich Content | Tables as plain text |
-| Presence | AWAY status |
-
-### IRC Limitations
-
-| Feature | Supported |
-|---------|-----------|
-| Message History | ❌ (requires bouncer) |
-| Reactions | ❌ |
-| Threads | ❌ |
-| Read Receipts | ❌ |
-| Presence | ⚠️ (AWAY only) |
-| Attachments | ⚠️ (URLs or DCC) |
-
----
-
-## Email Integration Test
-
-### Prerequisites
-
-1. **SMTP Server** for sending
-2. **IMAP Server** for receiving
-3. **Email Account** with credentials
-
-### Gmail Setup
-
-For Gmail, you need an **App Password**:
-
-1. Enable 2-Factor Authentication on your Google account
-2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
-3. Create a new App Password for "Mail"
-4. Use this password for `EMAIL_PASSWORD`
-
-### Environment Variables
-
-```bash
-# Gmail example
-export EMAIL_SMTP_HOST="smtp.gmail.com"
-export EMAIL_SMTP_PORT="587"
-export EMAIL_IMAP_HOST="imap.gmail.com"
-export EMAIL_IMAP_PORT="993"
-export EMAIL_USERNAME="yourbot@gmail.com"
-export EMAIL_PASSWORD="your-app-password"
-export EMAIL_FROM_ADDRESS="yourbot@gmail.com"
-export EMAIL_FROM_NAME="Test Bot"
-export EMAIL_TEST_RECIPIENT="you@example.com"
-```
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `EMAIL_SMTP_HOST` | Yes | SMTP server hostname |
-| `EMAIL_SMTP_PORT` | No | SMTP port (default: 587) |
-| `EMAIL_IMAP_HOST` | Yes | IMAP server hostname |
-| `EMAIL_IMAP_PORT` | No | IMAP port (default: 993) |
-| `EMAIL_USERNAME` | Yes | Login username |
-| `EMAIL_PASSWORD` | Yes | Login password |
-| `EMAIL_FROM_ADDRESS` | Yes | From email address |
-| `EMAIL_FROM_NAME` | No | From display name |
-| `EMAIL_TEST_RECIPIENT` | Yes | Recipient for tests |
-| `EMAIL_SMTP_USE_TLS` | No | Use STARTTLS (default: true) |
-| `EMAIL_SMTP_USE_SSL` | No | Use SSL for SMTP (default: false) |
-| `EMAIL_IMAP_USE_SSL` | No | Use SSL for IMAP (default: true) |
-
-### Run
-
-```bash
-python -m chatom.tests.integration.email_e2e
-```
-
-### What's Tested
-
-| Feature | Test Description |
-|---------|-----------------|
-| Connection | Connect to SMTP and IMAP |
-| Plain Text Email | Send simple text email |
-| HTML Email | Send formatted HTML email |
-| Format System | Convert FormattedMessage to HTML |
-| Mentions | mailto: links in HTML |
-| Threading | In-Reply-To headers |
-| Fetch Emails | Read from INBOX via IMAP |
-| Rich Content | HTML tables |
-
-### Email Limitations
-
-| Feature | Supported |
-|---------|-----------|
-| Message History | ✅ (via IMAP) |
-| Threads | ✅ (via headers) |
-| Attachments | ✅ |
-| HTML Formatting | ✅ |
-| Reactions | ❌ |
-| Presence | ❌ |
-| Real-time | ❌ (polling) |
 
 ---
 
@@ -515,7 +310,7 @@ uv pip install -e .
 Add verbose output by setting:
 ```bash
 export CHATOM_DEBUG=1
-python -m chatom.tests.integration.slack_e2e
+python -m chatom.tests.integration.e2e.slack
 ```
 
 ### Reporting Issues

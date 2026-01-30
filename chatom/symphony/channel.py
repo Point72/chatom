@@ -8,6 +8,8 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 
+from pydantic import model_validator
+
 from chatom.base import Channel, ChannelType, Field
 
 __all__ = ("SymphonyChannel", "SymphonyRoom", "SymphonyStreamType")
@@ -95,6 +97,23 @@ class SymphonyChannel(Channel):
         elif self.public:
             return ChannelType.PUBLIC
         return ChannelType.PRIVATE
+
+    @model_validator(mode="after")
+    def _sync_channel_type(self) -> "SymphonyChannel":
+        """Sync channel_type from Symphony stream_type."""
+        # Only update if not already set to a meaningful value
+        if self.channel_type == ChannelType.UNKNOWN:
+            object.__setattr__(self, "channel_type", self.generic_channel_type)
+        return self
+
+    @property
+    def stream_id(self) -> str:
+        """Alias for id - Symphony uses stream_id terminology.
+
+        Returns:
+            str: The stream/channel ID.
+        """
+        return self.id
 
 
 # Alias for backwards compatibility

@@ -21,7 +21,7 @@ Environment Variables Required:
         SLACK_APP_TOKEN: App token for Socket Mode (xapp-...) - REQUIRED for this test
 
 Usage:
-    python -m chatom.tests.integration.combined_e2e
+    python -m chatom.tests.integration.e2e.combined
 
 The test will:
 1. Connect to both Symphony and Slack

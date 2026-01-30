@@ -18,6 +18,7 @@ from chatom.base import (
     ReactionEvent,
     ReactionEventType,
     SimpleAuthorizationPolicy,
+    Thread,
     User,
     is_user_authorized,
     parse_mentions,
@@ -41,17 +42,19 @@ class TestMessageToUser:
         assert message.is_message_to_user(user) is True
         assert message.is_message_to_user(other_user) is False
 
-    def test_is_message_to_user_with_mention_ids(self):
-        """Test is_message_to_user when user id is in mention_ids."""
+    def test_is_message_to_user_with_mentions_list(self):
+        """Test is_message_to_user when user is in mentions list."""
         user = User(id="U123", name="Bot")
 
         message = Message(
             id="M001",
             content="Hello!",
-            mention_ids=["U123", "U789"],
+            mentions=[User(id="U123"), User(id="U789")],
         )
 
         assert message.is_message_to_user(user) is True
+        # Verify mention_ids property works
+        assert "U123" in message.mention_ids
 
     def test_is_message_to_user_no_mention(self):
         """Test is_message_to_user when user is not mentioned."""
@@ -61,7 +64,6 @@ class TestMessageToUser:
             id="M001",
             content="Hello everyone!",
             mentions=[],
-            mention_ids=[],
         )
 
         assert message.is_message_to_user(user) is False
@@ -117,9 +119,9 @@ class TestMessageDirectMessage:
 class TestMessageInThread:
     """Tests for Message.is_in_thread()."""
 
-    def test_is_in_thread_with_thread_id(self):
-        """Test is_in_thread returns True when thread_id is set."""
-        message = Message(id="M001", content="Hi", thread_id="T123")
+    def test_is_in_thread_with_thread(self):
+        """Test is_in_thread returns True when thread is set."""
+        message = Message(id="M001", content="Hi", thread=Thread(id="T123"))
 
         assert message.is_in_thread() is True
 

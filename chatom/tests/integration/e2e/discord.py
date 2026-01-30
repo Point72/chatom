@@ -15,7 +15,7 @@ Usage:
     export DISCORD_TEST_CHANNEL_NAME="general"
     export DISCORD_TEST_USER_NAME="johndoe#1234"
     export DISCORD_GUILD_NAME="My Server"
-    python -m chatom.tests.integration.discord_e2e
+    python -m chatom.tests.integration.e2e.discord
 
 The bot will:
 1. Connect and display bot info
@@ -581,7 +581,7 @@ class DiscordE2ETest:
                 .add_text(".\n\nExample: ")
                 .add_italic(f"@{bot_name} hello this is a test message")
                 .add_text("\n\nYou have ")
-                .add_bold("60 seconds")
+                .add_bold("30 seconds")
                 .add_text(" to respond...")
             )
             await self.backend.send_message(self.channel_id, prompt_msg.render(Format.DISCORD_MARKDOWN))
@@ -590,7 +590,7 @@ class DiscordE2ETest:
 
             # Wait for message with timeout
             try:
-                await asyncio.wait_for(receive_task, timeout=60.0)
+                await asyncio.wait_for(receive_task, timeout=30.0)
             except asyncio.TimeoutError:
                 receive_task.cancel()
                 try:

@@ -7,6 +7,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from chatom.base import Field, Message
+from chatom.discord.user import DiscordUser
 
 if TYPE_CHECKING:
     from chatom.format import FormattedMessage
@@ -81,23 +82,23 @@ class DiscordMessage(Message):
 
     Based on the Discord API message structure.
 
+    Note: Use the inherited `channel` field for the DiscordChannel object,
+    `channel_id` is synced from channel.id. Similarly for author/author_id.
+    The `mentions` field here is a List[str] of user IDs for Discord-specific
+    use, while the base class `mention_ids` is synced from it.
+
     Attributes:
         discord_type: The Discord message type.
-        channel_id: The channel ID.
         guild_id: The guild/server ID.
-        author_id: The author's user ID.
         member: Guild member data for the author.
         mention_everyone: Whether @everyone was mentioned.
-        mentions: List of mentioned user IDs.
         mention_roles: List of mentioned role IDs.
         mention_channels: List of mentioned channel IDs.
         nonce: Used for message send verification.
         pinned: Whether the message is pinned.
         webhook_id: Webhook ID if sent by a webhook.
         flags: Message flags.
-        referenced_message: The message being replied to.
         interaction: Interaction data if from an interaction.
-        thread: Thread spawned from this message.
         components: Message components (buttons, etc.).
         sticker_items: Stickers in the message.
         position: Position in thread.
@@ -107,17 +108,9 @@ class DiscordMessage(Message):
         default=DiscordMessageType.DEFAULT,
         description="The Discord message type.",
     )
-    channel_id: str = Field(
-        default="",
-        description="The channel ID.",
-    )
     guild_id: Optional[str] = Field(
         default=None,
         description="The guild/server ID.",
-    )
-    author_id: Optional[str] = Field(
-        default=None,
-        description="The author's user ID.",
     )
     member: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -126,10 +119,6 @@ class DiscordMessage(Message):
     mention_everyone: bool = Field(
         default=False,
         description="Whether @everyone was mentioned.",
-    )
-    mentions: List[str] = Field(
-        default_factory=list,
-        description="List of mentioned user IDs.",
     )
     mention_roles: List[str] = Field(
         default_factory=list,
@@ -256,7 +245,7 @@ class DiscordMessage(Message):
         if self.guild_id:
             fm.metadata["guild_id"] = self.guild_id
         if self.mentions:
-            fm.metadata["mention_ids"] = self.mentions
+            fm.metadata["mention_ids"] = [m.id for m in self.mentions]
         if self.webhook_id:
             fm.metadata["webhook_id"] = self.webhook_id
 
@@ -300,20 +289,43 @@ class DiscordMessage(Message):
         Returns:
             A DiscordMessage instance.
         """
-        author = data.get("author", {})
+        from chatom.discord.channel import DiscordChannel
+
+        author_data = data.get("author", {})
+
+        # Create author User object
+        author = DiscordUser(
+            id=author_data.get("id", ""),
+            username=author_data.get("username", ""),
+            name=author_data.get("global_name") or author_data.get("username", ""),
+            is_bot=author_data.get("bot", False),
+        )
+
+        # Create channel object
+        channel_id = data.get("channel_id", "")
+        channel = DiscordChannel(id=channel_id) if channel_id else None
+
+        # Extract mention IDs and create User objects
+        mention_users = [
+            DiscordUser(
+                id=m.get("id", ""),
+                username=m.get("username", ""),
+                name=m.get("global_name") or m.get("username", ""),
+            )
+            for m in data.get("mentions", [])
+        ]
 
         return cls(
             id=data.get("id", ""),
             content=data.get("content", ""),
             discord_type=DiscordMessageType(data.get("type", 0)),
-            channel_id=data.get("channel_id", ""),
+            channel=channel,
             guild_id=data.get("guild_id"),
-            author_id=author.get("id", ""),
-            is_bot=author.get("bot", False),
+            author=author,
+            is_bot=author.is_bot,
             member=data.get("member"),
             mention_everyone=data.get("mention_everyone", False),
-            mentions=[m.get("id", "") for m in data.get("mentions", [])],
-            mention_ids=[m.get("id", "") for m in data.get("mentions", [])],
+            mentions=mention_users,
             mention_roles=data.get("mention_roles", []),
             mention_channels=[c.get("id", "") for c in data.get("mention_channels", [])],
             nonce=data.get("nonce"),

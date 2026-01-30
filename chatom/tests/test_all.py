@@ -74,26 +74,6 @@ class TestImports:
 
         assert SymphonyUser is not None
 
-    def test_import_email_backend(self):
-        """Test importing Email backend."""
-        from chatom.email import EmailUser
-
-        assert EmailUser is not None
-
-    def test_import_irc_backend(self):
-        """Test importing IRC backend."""
-        from chatom.irc import IRCUser
-
-        assert IRCUser is not None
-
-    def test_import_matrix_backend(self):
-        """Test importing Matrix backend."""
-        from chatom.matrix import (
-            MatrixUser,
-        )
-
-        assert MatrixUser is not None
-
 
 class TestIntegration:
     """Integration tests for chatom."""

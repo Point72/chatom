@@ -971,22 +971,56 @@ class SymphonyBackend(BackendBase):
                 if self._skip_history and msg_timestamp < self._start_time:
                     return
 
+                # Determine stream type from the stream object
+                stream_type_str = getattr(msg.stream, "stream_type", None) or "ROOM"
+                try:
+                    from .channel import SymphonyChannel, SymphonyStreamType
+
+                    stream_type = SymphonyStreamType(stream_type_str)
+                except (ValueError, ImportError):
+                    stream_type = None
+
+                # Lookup channel to get full info (id AND name)
+                channel = await self._backend._fetch_channel_by_id(stream_id)
+                if channel is None and stream_type is not None:
+                    # Create channel with at least the stream_type
+                    channel = SymphonyChannel(
+                        id=stream_id,
+                        name="",  # Name not available in event
+                        stream_type=stream_type,
+                    )
+                elif channel is not None and stream_type is not None:
+                    # Update stream_type if we have it
+                    channel = SymphonyChannel(
+                        id=channel.id,
+                        name=channel.name,
+                        stream_type=stream_type,
+                        stream_id=stream_id,
+                    )
+
+                # Lookup author to get full info (id AND name)
+                author = None
+                if sender_id:
+                    author = await self._backend._fetch_user_by_id(sender_id)
+
                 # Convert to SymphonyMessage
                 symphony_msg = SymphonyMessage(
                     id=msg.message_id,
                     message_id=msg.message_id,
                     content=msg.message or "",
                     presentation_ml=msg.message or "",
+                    author=author,  # Use looked-up author with full info
                     author_id=sender_id or "",
                     channel_id=stream_id,
+                    channel=channel,
                     timestamp=msg_timestamp,
                     data=msg.data,
                     mentions=mentions,
                     mention_ids=mention_ids,
                 )
 
-                # Cache sender info
-                if initiator.user:
+                # If we didn't find the author via lookup, use info from initiator
+                if author is None and initiator.user:
                     username = getattr(initiator.user, "username", "") or str(initiator.user.user_id)
                     # If username looks like an email, use it as email
                     email = username if "@" in username else ""

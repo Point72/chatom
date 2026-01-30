@@ -11,6 +11,7 @@ from .attachment import Attachment
 from .base import BaseModel, Field, Identifiable
 from .channel import Channel
 from .embed import Embed
+from .organization import Organization
 from .reaction import Reaction
 from .thread import Thread
 from .user import User
@@ -82,11 +83,8 @@ class Message(Identifiable):
         id: Platform-specific unique identifier.
         content: Text content of the message.
         author: User who sent the message.
-        author_id: ID of the user who sent the message.
         channel: Channel where the message was sent.
-        channel_id: ID of the channel where the message was sent.
         thread: Thread the message belongs to, if any.
-        thread_id: ID of the thread, if in a thread.
         message_type: Type of message.
         created_at: When the message was created.
         edited_at: When the message was last edited.
@@ -95,13 +93,11 @@ class Message(Identifiable):
         is_bot: Whether the message was sent by a bot.
         is_system: Whether this is a system message.
         mentions: Users mentioned in the message.
-        mention_ids: IDs of users mentioned in the message.
         attachments: File attachments on the message.
         embeds: Rich embeds in the message.
         reactions: Reactions on the message.
         reference: Reference to another message (for replies).
         reply_to: The message this is replying to.
-        reply_to_id: ID of the message being replied to.
         formatted_content: Rich/formatted version of content (HTML, MessageML, etc.).
         raw: The raw message data from the backend.
         backend: The backend this message originated from.
@@ -118,25 +114,17 @@ class Message(Identifiable):
         description="User who sent the message.",
         alias="user",
     )
-    author_id: str = Field(
-        default="",
-        description="ID of the user who sent the message.",
-    )
     channel: Optional[Channel] = Field(
         default=None,
         description="Channel where the message was sent.",
-    )
-    channel_id: str = Field(
-        default="",
-        description="ID of the channel where the message was sent.",
     )
     thread: Optional[Thread] = Field(
         default=None,
         description="Thread the message belongs to, if any.",
     )
-    thread_id: str = Field(
-        default="",
-        description="ID of the thread, if in a thread.",
+    organization: Optional["Organization"] = Field(
+        default=None,
+        description="Organization the message belongs to, if applicable.",
     )
     message_type: MessageType = Field(
         default=MessageType.DEFAULT,
@@ -171,10 +159,6 @@ class Message(Identifiable):
         description="Users mentioned in the message.",
         alias="tags",
     )
-    mention_ids: List[str] = Field(
-        default_factory=list,
-        description="IDs of users mentioned in the message.",
-    )
     attachments: List[Attachment] = Field(
         default_factory=list,
         description="File attachments on the message.",
@@ -194,10 +178,6 @@ class Message(Identifiable):
     reply_to: Optional["Message"] = Field(
         default=None,
         description="The message this is replying to.",
-    )
-    reply_to_id: str = Field(
-        default="",
-        description="ID of the message being replied to.",
     )
     formatted_content: str = Field(
         default="",
@@ -244,6 +224,51 @@ class Message(Identifiable):
         return self.mentions
 
     @property
+    def mention_ids(self) -> List[str]:
+        """Get the IDs of mentioned users.
+
+        Returns:
+            List[str]: List of user IDs mentioned in this message.
+        """
+        return [m.id for m in self.mentions if m.id]
+
+    @property
+    def author_id(self) -> str:
+        """Get the author's ID.
+
+        Returns:
+            str: The author ID or empty string if no author.
+        """
+        return self.author.id if self.author else ""
+
+    @property
+    def channel_id(self) -> str:
+        """Get the channel's ID.
+
+        Returns:
+            str: The channel ID or empty string if no channel.
+        """
+        return self.channel.id if self.channel else ""
+
+    @property
+    def thread_id(self) -> str:
+        """Get the thread's ID.
+
+        Returns:
+            str: The thread ID or empty string if no thread.
+        """
+        return self.thread.id if self.thread else ""
+
+    @property
+    def reply_to_id(self) -> str:
+        """Get the ID of the message this is replying to.
+
+        Returns:
+            str: The reply-to message ID or empty string if not a reply.
+        """
+        return self.reply_to.id if self.reply_to else ""
+
+    @property
     def is_reply(self) -> bool:
         """Check if this message is a reply.
 
@@ -269,6 +294,49 @@ class Message(Identifiable):
             bool: True if message has embeds.
         """
         return len(self.embeds) > 0
+
+    @property
+    def is_dm(self) -> bool:
+        """Check if this message is from a direct message.
+
+        Returns:
+            bool: True if from a DM channel.
+        """
+        if self.channel:
+            return self.channel.is_dm
+        # Fall back to metadata
+        return bool(self.metadata.get("is_dm") or self.metadata.get("is_im"))
+
+    @property
+    def is_direct_message(self) -> bool:
+        """Alias for is_dm.
+
+        Returns:
+            bool: True if from a DM channel.
+        """
+        return self.is_dm
+
+    @property
+    def channel_name(self) -> str:
+        """Get the channel name.
+
+        Returns:
+            str: The channel name or empty string if not available.
+        """
+        if self.channel:
+            return self.channel.name
+        return self.metadata.get("channel_name", "")
+
+    @property
+    def author_name(self) -> str:
+        """Get the author name.
+
+        Returns:
+            str: The author name or empty string if not available.
+        """
+        if self.author:
+            return self.author.name
+        return self.metadata.get("author_name", "")
 
     def to_formatted(self) -> "FormattedMessage":
         """Convert this message to a FormattedMessage.
@@ -397,34 +465,6 @@ class Message(Identifiable):
         formatted = self.to_formatted()
         return formatted.render_for(backend)
 
-    @property
-    def is_direct_message(self) -> bool:
-        """Check if this message was sent in a direct/private message channel.
-
-        Returns True if the message's channel is a DM/IM/group DM.
-        Returns False if no channel is set.
-
-        Returns:
-            bool: True if this is a direct message.
-
-        Example:
-            >>> if message.is_direct_message:
-            ...     # Handle DM differently
-            ...     pass
-        """
-        if self.channel is not None:
-            return self.channel.is_direct_message
-        return False
-
-    @property
-    def is_dm(self) -> bool:
-        """Alias for is_direct_message.
-
-        Returns:
-            bool: True if this is a direct message.
-        """
-        return self.is_direct_message
-
     def is_message_to_user(self, user: User) -> bool:
         """Check if this message mentions or is directed at a specific user.
 
@@ -448,10 +488,6 @@ class Message(Identifiable):
         for mentioned in self.mentions:
             if mentioned.id == user.id:
                 return True
-
-        # Also check mention_ids list
-        if user.id in self.mention_ids:
-            return True
 
         return False
 

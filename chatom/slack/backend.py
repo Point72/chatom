@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime
+from logging import getLogger
 from typing import Any, AsyncIterator, ClassVar, List, Optional, Union
 
 from pydantic import Field
@@ -12,6 +13,7 @@ from ..base import (
     BackendCapabilities,
     Channel,
     PresenceStatus,
+    Thread,
     User,
 )
 from ..format.variant import Format
@@ -23,6 +25,8 @@ from .presence import SlackPresence, SlackPresenceStatus
 from .user import SlackUser
 
 __all__ = ("SlackBackend",)
+
+_log = getLogger(__name__)
 
 
 class SlackBackend(BackendBase):
@@ -353,19 +357,31 @@ class SlackBackend(BackendBase):
 
         # Get user ID - this is a string, not a User object
         user_id = msg_data.get("user")
+        bot_id = msg_data.get("bot_id")
+        is_bot = bot_id is not None
+        # Use user_id if available, otherwise use bot_id as the id
+        author_id = user_id or bot_id or ""
+
+        # Create author with bot info if available
+        author = None
+        if author_id:
+            author = SlackUser(
+                id=author_id,
+                name="",
+                is_bot=is_bot,
+            )
 
         return SlackMessage(
             id=ts,
-            ts=ts,
             content=msg_data.get("text", ""),
-            channel=channel_id,
-            sender_id=user_id,  # Use sender_id for the string user ID
-            author_id=user_id or "",  # Set author_id as well
+            channel_id=channel_id,
+            author=author,
+            author_id=author_id,
+            is_bot=is_bot,
             team=msg_data.get("team"),
             created_at=created_at,
-            bot_id=msg_data.get("bot_id"),
             blocks=msg_data.get("blocks", []),
-            thread_ts=msg_data.get("thread_ts"),
+            threads=Thread(id=msg_data.get("thread_ts")),
             reply_count=msg_data.get("reply_count", 0),
         )
 
@@ -825,6 +841,8 @@ class SlackBackend(BackendBase):
 
         # IMPORTANT: aiohttp SocketModeClient runs handlers in the same event loop,
         # so handlers MUST be async and can use regular await
+        backend_ref = self  # Capture reference for closure
+
         async def handle_message(client: SocketModeClient, req: SocketModeRequest):
             try:
                 # Acknowledge the event
@@ -854,23 +872,62 @@ class SlackBackend(BackendBase):
                         # Skip messages from before the stream started
                         if skip_history and ts and float(ts) < stream_start_ts:
                             return
-                        # Create SlackMessage
+
+                        # Detect if this is a DM based on channel type from event or channel ID pattern
+                        channel_type = event.get("channel_type", "")
+                        is_im = channel_type == "im" or (event_channel_id and event_channel_id.startswith("D"))
+
+                        # Try to lookup user to get full info (id AND name)
+                        # But don't fail if lookup fails - just use what we have
+                        author = None
+                        author_name = ""
+                        try:
+                            if user_id:
+                                author = await backend_ref._fetch_user_by_id(user_id)
+                                if author:
+                                    author_name = author.name or ""
+                        except Exception:
+                            pass  # Lookup failed, continue with basic info
+
+                        # Try to lookup channel to get full info (id AND name)
+                        # But don't fail if lookup fails - just use what we have
+                        channel_obj = None
+                        channel_name = ""
+                        try:
+                            if event_channel_id:
+                                channel_obj = await backend_ref._fetch_channel_by_id(event_channel_id)
+                                if channel_obj:
+                                    channel_name = channel_obj.name or ""
+                                    # Update is_im from channel object if available
+                                    if hasattr(channel_obj, "is_im") and channel_obj.is_im:
+                                        is_im = True
+                        except Exception:
+                            pass  # Lookup failed, continue with basic info
+
+                        # Create SlackMessage with full user/channel info
                         slack_msg = SlackMessage(
                             id=ts,
-                            ts=ts,
                             content=text,
                             text=text,
+                            author=author,
                             author_id=user_id or "",
+                            channel=channel_obj,  # Proper SlackChannel object
                             channel_id=event_channel_id or "",
-                            thread_id=thread_ts or "",
+                            thread=Thread(id=thread_ts) if thread_ts else None,
                             timestamp=datetime.fromtimestamp(float(ts)) if ts else datetime.now(),
+                            metadata={
+                                "is_im": is_im,
+                                "is_dm": is_im,
+                                "author_name": author_name,
+                                "channel_name": channel_name,
+                            },
                         )
 
                         # Put message on queue (same event loop, no thread-safe needed)
                         await message_queue.put(slack_msg)
-            except Exception:
-                # Silently handle errors to keep stream running
-                pass
+            except Exception as e:
+                # Log the error for debugging
+                _log.exception(f"Error handling Slack message: {e}")
 
         # Create Socket Mode client - use app_token_str to get the actual token value
         socket_client = SocketModeClient(

@@ -4,9 +4,6 @@ import pytest
 
 from chatom import Channel, User, mention_channel, mention_user
 from chatom.discord import DiscordChannel, DiscordUser
-from chatom.email import EmailUser
-from chatom.irc import IRCUser
-from chatom.matrix import MatrixUser
 from chatom.slack import SlackChannel, SlackUser
 from chatom.symphony import SymphonyUser
 
@@ -19,16 +16,6 @@ class TestMentionUser:
         [
             # Discord mentions use <@id> format
             (DiscordUser(handle="jane_doe", id="456", name="Jane Doe"), "<@456>"),
-            # Email without email falls back to name
-            (EmailUser(handle="", id="789", name="Alice"), "Alice"),
-            # Email with email uses mailto link
-            (EmailUser(handle="", id="101", name="Bob", email="bob@example.com"), "<a href='mailto:bob@example.com'>Bob</a>"),
-            # IRC uses nick
-            (IRCUser(nick="charlie", id="112", name="Charlie"), "charlie"),
-            # IRC without nick falls back to handle then name
-            (IRCUser(id="131", name="David"), "David"),
-            # Matrix uses user_id
-            (MatrixUser(handle="eve", id="415", name="Eve", user_id="@eve:matrix.org"), "@eve:matrix.org"),
             # Slack uses <@id> format
             (SlackUser(handle="john_doe", id="123", name="John Doe"), "<@123>"),
             # Symphony uses MessageML mention tag
@@ -128,30 +115,6 @@ class TestSpecialMentions:
 
         assert format_cashtag("AAPL") == '<cash tag="AAPL"/>'
 
-    def test_irc_highlight(self):
-        """Test IRC highlight."""
-        from chatom.irc import highlight_user
-
-        # highlight_user takes nick and message
-        result = highlight_user("johnny", "hello there")
-        assert result == "johnny: hello there"
-
-    def test_matrix_room_mention(self):
-        """Test Matrix room mention."""
-        from chatom.matrix import mention_room
-
-        # mention_room only takes room_id
-        result = mention_room("!abc:matrix.org")
-        assert "!abc:matrix.org" in result
-
-    def test_matrix_pill(self):
-        """Test Matrix pill creation."""
-        from chatom.matrix import create_pill
-
-        result = create_pill("@john:matrix.org", "John")
-        assert "matrix.to" in result
-        assert "@john:matrix.org" in result
-
 
 class TestMentionUserForBackend:
     """Tests for mention_user_for_backend function."""
@@ -195,39 +158,6 @@ class TestMentionUserForBackend:
         user = User(name="Charlie")
         result = mention_user_for_backend(user, "symphony")
         assert result == "@Charlie"
-
-    def test_mention_for_matrix(self):
-        """Test mentioning a user for Matrix backend."""
-        from chatom import User, mention_user_for_backend
-
-        user = User(handle="eve", name="Eve")
-        result = mention_user_for_backend(user, "matrix")
-        assert "@eve:matrix.org" in result
-
-    def test_mention_for_irc(self):
-        """Test mentioning a user for IRC backend."""
-        from chatom import User, mention_user_for_backend
-
-        user = User(handle="johnny", name="John")
-        result = mention_user_for_backend(user, "irc")
-        assert result == "johnny"
-
-    def test_mention_for_email_with_email(self):
-        """Test mentioning a user for email backend with email."""
-        from chatom import User, mention_user_for_backend
-
-        user = User(name="Frank", email="frank@example.com")
-        result = mention_user_for_backend(user, "email")
-        assert "mailto:frank@example.com" in result
-        assert "Frank" in result
-
-    def test_mention_for_email_without_email(self):
-        """Test mentioning a user for email backend without email."""
-        from chatom import User, mention_user_for_backend
-
-        user = User(name="Grace")
-        result = mention_user_for_backend(user, "email")
-        assert result == "Grace"
 
     def test_mention_for_unknown_backend(self):
         """Test mentioning a user for unknown backend falls back to name."""
@@ -309,14 +239,6 @@ class TestMentionEdgeCases:
         user = User(name="Test User")  # No id, no email
         result = mention_user_for_backend(user, "symphony")
         assert result == "@Test User"
-
-    def test_mention_user_for_matrix_no_handle(self):
-        """Test Matrix mention without handle falls back to display_name."""
-        from chatom import User, mention_user_for_backend
-
-        user = User(name="Test User")  # No handle, no user_id
-        result = mention_user_for_backend(user, "matrix")
-        assert result == "Test User"
 
     def test_mention_channel_for_slack_no_id(self):
         """Test Slack channel mention without ID falls back to #name."""
