@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator, ClassVar, List, Optional, Union
 
 from pydantic import Field
 
-from ..backend_registry import BackendBase
+from ..backend import BackendBase
 from ..base import (
     SYMPHONY_CAPABILITIES,
     BackendCapabilities,

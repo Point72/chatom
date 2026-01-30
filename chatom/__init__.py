@@ -18,9 +18,10 @@ For platform-specific functionality, import from the backend modules:
     >>> from chatom.symphony import SymphonyUser
 """
 
-from .backend import BackendConfig
-from .backend_registry import (
+from .backend import (
+    Backend,
     BackendBase,
+    BackendConfig,
     BackendRegistry,
     get_backend,
     get_backend_format,
@@ -162,6 +163,7 @@ __all__ = (
     # Version
     "__version__",
     # Backend
+    "Backend",
     "BackendConfig",
     # Backend registry
     "BackendBase",

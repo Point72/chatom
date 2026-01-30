@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from pydantic import Field, SecretStr
 
-from .base import BaseModel
+from ..base import BaseModel
 
 __all__ = ("BackendConfig",)
 
