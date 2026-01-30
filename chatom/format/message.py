@@ -71,7 +71,7 @@ def get_format_for_backend(backend: str) -> Format:
     """
     # Try the registry first (which includes entry points)
     try:
-        from chatom.backend_registry import BackendRegistry
+        from chatom.backend import BackendRegistry
 
         return BackendRegistry.get_format(backend)
     except (ImportError, KeyError):

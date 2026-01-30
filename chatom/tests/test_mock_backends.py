@@ -703,7 +703,7 @@ class TestRoomChannelAliases:
     @pytest.mark.asyncio
     async def test_base_class_methods_raise_not_implemented(self):
         """Test that base class methods raise NotImplementedError."""
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         # Create a minimal backend
         class MinimalBackend(BackendBase):

@@ -15,7 +15,7 @@ from csp import ts
 from csp.impl.pushadapter import PushInputAdapter
 from csp.impl.wiring import py_push_adapter_def
 
-from ..backend_registry import BackendBase
+from ..backend import BackendBase
 from ..base import Message
 
 __all__ = (

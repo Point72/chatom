@@ -406,7 +406,7 @@ def _register_all_types() -> None:
     This is called lazily when conversion functions are first used.
     """
     try:
-        from ..backend_registry import BackendRegistry
+        from ..backend import BackendRegistry
 
         BackendRegistry.register_all_types()
     except ImportError:

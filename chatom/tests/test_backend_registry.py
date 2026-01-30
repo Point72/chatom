@@ -564,7 +564,7 @@ class TestFetchMessages:
     def test_fetch_messages_abstract_method(self):
         """Test that fetch_messages is defined as abstract in BackendBase."""
 
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         # Verify the method exists
         assert hasattr(BackendBase, "fetch_messages")
@@ -575,7 +575,7 @@ class TestFetchMessages:
         """Test that fetch_messages has the correct signature."""
         import inspect
 
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         sig = inspect.signature(BackendBase.fetch_messages)
         params = list(sig.parameters.keys())
@@ -587,7 +587,7 @@ class TestFetchMessages:
 
     def test_sync_fetch_messages_exists(self):
         """Test that sync helper can call fetch_messages method dynamically."""
-        from chatom.backend_registry import BackendBase, SyncHelper
+        from chatom.backend import BackendBase, SyncHelper
 
         # Create a mock backend to test with
         class MockBackend(BackendBase):
@@ -763,7 +763,7 @@ class TestPresenceMethods:
 
     def test_get_presence_method_exists(self):
         """Test that get_presence is defined in BackendBase."""
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         assert hasattr(BackendBase, "get_presence")
         method = getattr(BackendBase, "get_presence")
@@ -771,7 +771,7 @@ class TestPresenceMethods:
 
     def test_set_presence_method_exists(self):
         """Test that set_presence is defined in BackendBase."""
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         assert hasattr(BackendBase, "set_presence")
         method = getattr(BackendBase, "set_presence")
@@ -781,7 +781,7 @@ class TestPresenceMethods:
         """Test that get_presence has the correct signature."""
         import inspect
 
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         sig = inspect.signature(BackendBase.get_presence)
         params = list(sig.parameters.keys())
@@ -792,7 +792,7 @@ class TestPresenceMethods:
         """Test that set_presence has the correct signature."""
         import inspect
 
-        from chatom.backend_registry import BackendBase
+        from chatom.backend import BackendBase
 
         sig = inspect.signature(BackendBase.set_presence)
         params = list(sig.parameters.keys())
@@ -803,7 +803,7 @@ class TestPresenceMethods:
 
     def test_sync_get_presence_exists(self):
         """Test that sync helper can call get_presence method dynamically."""
-        from chatom.backend_registry import BackendBase, SyncHelper
+        from chatom.backend import BackendBase, SyncHelper
 
         class MockBackend(BackendBase):
             name = "mock"
@@ -835,7 +835,7 @@ class TestPresenceMethods:
 
     def test_sync_set_presence_exists(self):
         """Test that sync helper can call set_presence method dynamically."""
-        from chatom.backend_registry import BackendBase, SyncHelper
+        from chatom.backend import BackendBase, SyncHelper
 
         class MockBackend(BackendBase):
             name = "mock"

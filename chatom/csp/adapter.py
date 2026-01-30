@@ -14,7 +14,7 @@ from typing import Optional, Set
 import csp
 from csp import ts
 
-from ..backend_registry import BackendBase
+from ..backend import BackendBase
 from ..base import Message
 from .nodes import MessageReaderPushAdapter, _send_messages_thread
 
