@@ -456,7 +456,7 @@ class MockDiscordBackend(DiscordBackend):
 
         # Sort by ID descending (newest first) and limit
         messages = sorted(messages, key=lambda m: int(m.id), reverse=True)
-        return messages[:limit]
+        return list(messages[:limit])
 
     async def send_message(
         self,
@@ -742,14 +742,14 @@ class MockDiscordBackend(DiscordBackend):
             The DM channel ID.
         """
         # Extract user IDs
-        user_ids = []
+        user_ids: list[str] = []
         for user in users:
             if isinstance(user, DiscordUser):
                 user_ids.append(user.id)
-            elif hasattr(user, "id"):
-                user_ids.append(user.id)
+            elif isinstance(user, str):
+                user_ids.append(user)
             else:
-                user_ids.append(str(user))
+                user_ids.append(str(getattr(user, "id", user)))
 
         # Track the created DM
         self._created_dms.append(user_ids)

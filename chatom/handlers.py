@@ -49,8 +49,6 @@ class InteractionRegistry:
     def __init__(self) -> None:
         self._handlers: Dict[str, List[InteractionHandler]] = {}
 
-    # ----- registration -------------------------------------------------
-
     def register(self, action_id: str, handler: InteractionHandler) -> None:
         """Register ``handler`` for ``action_id``."""
         self._handlers.setdefault(action_id, []).append(handler)
@@ -94,8 +92,6 @@ class InteractionRegistry:
 
         return decorator
 
-    # ----- introspection ------------------------------------------------
-
     @property
     def action_ids(self) -> List[str]:
         """Return all registered action IDs (excluding the wildcard)."""
@@ -107,8 +103,6 @@ class InteractionRegistry:
         if specific:
             return list(specific)
         return list(self._handlers.get(self.WILDCARD, []))
-
-    # ----- dispatch -----------------------------------------------------
 
     async def dispatch(self, event: Interaction) -> List[Any]:
         """Dispatch ``event`` to all matching handlers.

@@ -30,11 +30,6 @@ def _run(coro):
         return asyncio.run(coro)
 
 
-# ---------------------------------------------------------------------------
-# Phase 2.1: components on Message + attach_components_for_backend
-# ---------------------------------------------------------------------------
-
-
 class TestMessageComponents:
     def test_default_components_is_none(self):
         m = Message(content="hi")
@@ -120,11 +115,6 @@ class TestAttachComponentsForBackend:
         kw: dict = {}
         attach_components_for_backend(kw, c, Format.SLACK_MARKDOWN)
         assert kw["blocks"][0]["elements"][0]["type"] == "static_select"
-
-
-# ---------------------------------------------------------------------------
-# Phase 2.2: Interaction model + InteractionRegistry
-# ---------------------------------------------------------------------------
 
 
 class TestInteractionModel:
@@ -281,11 +271,6 @@ class TestInteractionRegistry:
         assert r.handlers_for("x") == [h1, h2]
         # unmatched with no default -> empty list
         assert r.handlers_for("missing") == []
-
-
-# ---------------------------------------------------------------------------
-# Backend.stream_interactions default behavior
-# ---------------------------------------------------------------------------
 
 
 class TestStreamInteractionsDefault:

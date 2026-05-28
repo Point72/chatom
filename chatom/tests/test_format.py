@@ -2932,4 +2932,4 @@ class TestBackendBaseUploadFile:
 
         backend = MinimalBackend()
         with pytest.raises(NotImplementedError):
-            asyncio.get_event_loop().run_until_complete(backend.upload_file("C123", b"data", filename="test.txt"))
+            asyncio.run(backend.upload_file("C123", b"data", filename="test.txt"))
