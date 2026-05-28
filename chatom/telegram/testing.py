@@ -372,7 +372,7 @@ class MockTelegramBackend(TelegramBackend):
             messages = [m for m in messages if int(m.id) > int(after_id)]
 
         messages = sorted(messages, key=lambda m: int(m.id), reverse=True)
-        return messages[:limit]
+        return list(messages[:limit])
 
     async def send_message(
         self,
@@ -572,14 +572,14 @@ class MockTelegramBackend(TelegramBackend):
         users: List[Union[str, User]],
     ) -> Optional[str]:
         """Create a mock DM channel."""
-        user_ids = []
+        user_ids: list[str] = []
         for user in users:
             if isinstance(user, TelegramUser):
                 user_ids.append(user.id)
-            elif hasattr(user, "id"):
-                user_ids.append(user.id)
+            elif isinstance(user, str):
+                user_ids.append(user)
             else:
-                user_ids.append(str(user))
+                user_ids.append(str(getattr(user, "id", user)))
 
         self._created_dms.append(user_ids)
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Optional, Set, cast
 
 from pydantic import BaseModel as PydanticBaseModel, Field, TypeAdapter
 from pydantic_ai._run_context import RunContext
@@ -8,8 +11,60 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets.abstract import AbstractToolset, ToolsetTool
 
 from chatom.backend import BackendBase
-from chatom.base import Channel, User
+from chatom.base import Channel, ChannelType, User
 from chatom.base.capabilities import Capability
+
+logger = logging.getLogger(__name__)
+
+
+class AccessDeniedError(Exception):
+    """Raised when a tool call is denied by the access policy."""
+
+    pass
+
+
+@dataclass
+class AccessPolicy:
+    """Configures what the agent is allowed to access on behalf of a user.
+
+    All checks are enforced *before* calling the backend — the agent cannot
+    bypass these regardless of prompt injection.
+
+    Attributes:
+        requesting_user: The user who invoked the command. Required for
+            membership checks.
+        invoking_channel_id: The channel where the command was issued. Used
+            when ``restrict_to_invoking_channel`` is True.
+        restrict_to_invoking_channel: If True, the agent can only access
+            messages from the channel where the command was invoked.
+            Prevents cross-channel data exfiltration.
+        require_membership: If True, verify the requesting user is a member
+            of any channel the agent tries to read. This is the primary
+            guardrail against reading rooms the user isn't in.
+        block_dm_reads: If True, prevent the agent from reading DM/group
+            channels. DMs often contain sensitive 1:1 conversations.
+        allowed_channel_ids: If set, only these channel IDs can be accessed.
+            Acts as an explicit whitelist. Takes precedence over membership
+            checks (i.e. if set, only these are allowed regardless of
+            membership).
+        blocked_channel_ids: Channels that are never accessible, regardless
+            of other settings. Useful for compliance/HR channels.
+        history_visible_since: If set, messages older than this timestamp
+            are filtered out. Use this to enforce "no pre-join history"
+            policies — set to the user's join date.
+        max_messages_per_request: Hard cap on messages returned per tool
+            call, preventing bulk data extraction.
+    """
+
+    requesting_user: Optional[User] = None
+    invoking_channel_id: Optional[str] = None
+    restrict_to_invoking_channel: bool = False
+    require_membership: bool = False
+    block_dm_reads: bool = False
+    allowed_channel_ids: Optional[Set[str]] = None
+    blocked_channel_ids: Set[str] = field(default_factory=set)
+    history_visible_since: Optional[datetime] = None
+    max_messages_per_request: int = 200
 
 
 class ChannelRef(PydanticBaseModel):
@@ -208,10 +263,16 @@ class BackendToolset(AbstractToolset[Any]):
         *,
         read_only: bool = False,
         max_retries: int = 1,
+        access_policy: Optional[AccessPolicy] = None,
     ) -> None:
         self._backend = backend
         self._read_only = read_only
         self._max_retries = max_retries
+        self._policy = access_policy or AccessPolicy()
+        # Cache for membership checks to avoid repeated API calls
+        self._membership_cache: dict[str, bool] = {}
+        # Cache for channel resolution to avoid repeated name→ID lookups
+        self._channel_cache: dict[str, Channel] = {}
 
     @property
     def id(self) -> str | None:
@@ -247,7 +308,16 @@ class BackendToolset(AbstractToolset[Any]):
         handler = getattr(self, f"_call_{name}", None)
         if handler is None:
             raise ValueError(f"Unknown tool: {name}")
-        result = await handler(tool_args)
+        # tool_args may be a validated Pydantic model — convert to dict
+        if hasattr(tool_args, "model_dump"):
+            tool_args = tool_args.model_dump()  # ty: ignore[call-non-callable]
+        try:
+            result = await handler(tool_args)
+        except AccessDeniedError as e:
+            # Return the denial as a tool result so the agent can inform the user
+            # rather than crashing the entire run.
+            logger.warning("Access denied for tool '%s': %s", name, e)
+            return {"error": "access_denied", "message": str(e)}
         return _serialize_result(result)
 
     def _should_include(self, desc: dict[str, Any]) -> bool:
@@ -277,19 +347,230 @@ class BackendToolset(AbstractToolset[Any]):
             return ref.to_user()
         return UserRef.model_validate(ref).to_user()
 
+    # ------------------------------------------------------------------
+    # Access control enforcement
+    # ------------------------------------------------------------------
+
+    async def _check_channel_access(self, channel: Channel) -> None:
+        """Enforce all access policy checks for a channel.
+
+        Raises AccessDeniedError if the requesting user is not allowed to
+        access the channel.
+        """
+        policy = self._policy
+        channel_id = channel.id
+
+        # 1. Blocked channels — always denied
+        if channel_id and channel_id in policy.blocked_channel_ids:
+            raise AccessDeniedError(f"Access to channel '{channel_id}' is blocked by policy.")
+
+        # 2. Explicit whitelist — if set, only listed channels are allowed
+        if policy.allowed_channel_ids is not None:
+            if channel_id not in policy.allowed_channel_ids:
+                raise AccessDeniedError(f"Channel '{channel_id}' is not in the allowed channel list.")
+            # If whitelisted, skip further checks (admin explicitly allowed)
+            return
+
+        # 3. Restrict to invoking channel
+        if policy.restrict_to_invoking_channel and policy.invoking_channel_id:
+            if channel_id and channel_id != policy.invoking_channel_id:
+                raise AccessDeniedError(f"Access restricted to the invoking channel. Cannot read from channel '{channel.name or channel_id}'.")
+
+        # 4. Block DM reads
+        if policy.block_dm_reads:
+            # Check if this is a DM by resolving channel info
+            resolved = await self._resolve_channel_type(channel)
+            if resolved in (ChannelType.DIRECT, ChannelType.GROUP):
+                raise AccessDeniedError("Reading direct messages is blocked by policy.")
+
+        # 5. Membership check
+        if policy.require_membership:
+            if not policy.requesting_user:
+                raise AccessDeniedError("Membership verification required but no requesting user context available.")
+            is_member = await self._check_membership(channel)
+            if not is_member:
+                raise AccessDeniedError(
+                    f"User '{policy.requesting_user.name or policy.requesting_user.id}' is not a member of channel '{channel.name or channel_id}'."
+                )
+
+    async def _resolve_channel_full(self, channel: Channel) -> Channel:
+        """Resolve a partial channel (name-only) to a full channel with ID.
+
+        Results are cached for the lifetime of this toolset instance.
+        """
+        if channel.id:
+            return channel
+        cache_key = channel.name or ""
+        if cache_key and cache_key in self._channel_cache:
+            return self._channel_cache[cache_key]
+        try:
+            resolved = await self._backend.lookup_channel(
+                id=channel.id or None,
+                name=channel.name or None,
+            )
+            if resolved:
+                if cache_key:
+                    self._channel_cache[cache_key] = resolved
+                return resolved
+        except (NotImplementedError, Exception):
+            pass
+        return channel
+
+    async def _resolve_channel_type(self, channel: Channel) -> ChannelType:
+        """Resolve the channel type, using backend lookup if needed."""
+        if channel.channel_type != ChannelType.UNKNOWN:
+            return channel.channel_type
+        # Try resolving via _resolve_channel_full (uses cache)
+        resolved = await self._resolve_channel_full(channel)
+        if resolved is not channel and hasattr(resolved, "channel_type") and resolved.channel_type != ChannelType.UNKNOWN:
+            return resolved.channel_type
+        # Still unknown — do an explicit lookup by ID
+        try:
+            looked_up = await self._backend.lookup_channel(
+                id=channel.id or None,
+                name=channel.name or None,
+            )
+            if looked_up and hasattr(looked_up, "channel_type"):
+                return looked_up.channel_type
+        except (NotImplementedError, Exception):
+            pass
+        return ChannelType.UNKNOWN
+
+    async def _check_membership(self, channel: Channel) -> bool:
+        """Check if the requesting user is a member of the channel.
+
+        Results are cached for the lifetime of this toolset instance
+        to avoid hammering the backend API.
+        """
+        policy = self._policy
+        if not policy.requesting_user:
+            # No user context — can't verify, deny by default
+            return False
+
+        channel_id = channel.id or channel.name
+        if not channel_id:
+            return False
+
+        # Check cache
+        if channel_id in self._membership_cache:
+            return self._membership_cache[channel_id]
+
+        # Try to verify via backend
+        try:
+            members = await self._backend.fetch_channel_members(channel)
+            user_id = policy.requesting_user.id
+            is_member = any(m.id == user_id for m in members)
+            self._membership_cache[channel_id] = is_member
+            return is_member
+        except NotImplementedError:
+            # Backend doesn't support membership listing.
+            # Fail open only if we have no other way to verify — log a warning.
+            logger.warning(
+                "Backend does not support fetch_channel_members; cannot verify membership for channel '%s'. Denying access.",
+                channel_id,
+            )
+            self._membership_cache[channel_id] = False
+            return False
+        except Exception as e:
+            logger.warning(
+                "Error checking membership for channel '%s': %s. Denying access.",
+                channel_id,
+                e,
+            )
+            self._membership_cache[channel_id] = False
+            return False
+
+    def _filter_messages_by_time(self, messages: list[Any]) -> list[Any]:
+        """Filter messages to only those after history_visible_since."""
+        policy = self._policy
+        if not policy.history_visible_since:
+            return messages
+
+        cutoff = policy.history_visible_since
+        filtered = []
+        for msg in messages:
+            # Support chatom Message objects and dicts
+            ts = None
+            if hasattr(msg, "timestamp"):
+                ts = msg.timestamp
+            elif isinstance(msg, dict):
+                ts = msg.get("timestamp")
+            if ts is None:
+                # Can't determine timestamp — exclude for safety
+                continue
+            # Normalize to aware datetime for comparison
+            if isinstance(ts, datetime):
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if cutoff.tzinfo is None:
+                    cutoff = cutoff.replace(tzinfo=timezone.utc)
+                if ts >= cutoff:
+                    filtered.append(msg)
+            else:
+                # Numeric timestamp (epoch millis or seconds)
+                cutoff_ts = cutoff.timestamp()
+                ts_val = float(ts)
+                # Heuristic: if > 1e12, it's milliseconds
+                if ts_val > 1e12:
+                    ts_val = ts_val / 1000.0
+                if ts_val >= cutoff_ts:
+                    filtered.append(msg)
+        return filtered
+
     async def _call_read_channel_history(self, args: dict[str, Any]) -> Any:
-        return await self._backend.fetch_messages(
-            channel=self._channel(args),
-            limit=args.get("limit", 50),
+        channel = self._channel(args)
+        channel = await self._resolve_channel_full(channel)
+        await self._check_channel_access(channel)
+        limit = min(args.get("limit", 50), self._policy.max_messages_per_request)
+        messages = await self._backend.fetch_messages(
+            channel=channel,
+            limit=limit,
         )
+        if isinstance(messages, list):
+            messages = self._filter_messages_by_time(messages)
+        return messages
 
     async def _call_search_messages(self, args: dict[str, Any]) -> Any:
         ch = self._channel(args) if args.get("channel") else None
-        return await self._backend.search_messages(
+        # If searching a specific channel, enforce access
+        if ch:
+            await self._check_channel_access(ch)
+        elif self._policy.restrict_to_invoking_channel:
+            # No channel specified but policy restricts to invoking channel
+            if self._policy.invoking_channel_id:
+                ch = Channel(id=self._policy.invoking_channel_id)
+            else:
+                raise AccessDeniedError("Search must specify a channel when cross-channel access is restricted.")
+        limit = min(args.get("limit", 20), self._policy.max_messages_per_request)
+        results = await self._backend.search_messages(
             query=args["query"],
             channel=ch,
-            limit=args.get("limit", 20),
+            limit=limit,
         )
+        # Filter results by time and by channel access
+        if isinstance(results, list):
+            results = self._filter_messages_by_time(results)
+            # If require_membership, filter out messages from channels user isn't in
+            if self._policy.require_membership and self._policy.requesting_user:
+                filtered = []
+                for msg in results:
+                    msg_channel_id = None
+                    if hasattr(msg, "channel_id"):
+                        msg_channel_id = msg.channel_id
+                    elif hasattr(msg, "channel") and msg.channel:
+                        msg_channel_id = msg.channel.id if hasattr(msg.channel, "id") else None
+                    elif isinstance(msg, dict):
+                        msg_channel_id = msg.get("channel_id") or (msg.get("channel", {}) or {}).get("id")
+                    if msg_channel_id:
+                        try:
+                            await self._check_channel_access(Channel(id=msg_channel_id))
+                            filtered.append(msg)
+                        except AccessDeniedError:
+                            continue
+                    else:
+                        filtered.append(msg)
+                results = filtered
+        return results
 
     async def _call_lookup_user(self, args: dict[str, Any]) -> Any:
         user = self._user(args)
@@ -308,25 +589,33 @@ class BackendToolset(AbstractToolset[Any]):
         )
 
     async def _call_get_channel_members(self, args: dict[str, Any]) -> Any:
-        return await self._backend.fetch_channel_members(self._channel(args))
+        channel = self._channel(args)
+        await self._check_channel_access(channel)
+        return await self._backend.fetch_channel_members(channel)
 
     async def _call_send_message(self, args: dict[str, Any]) -> Any:
+        channel = self._channel(args)
+        await self._check_channel_access(channel)
         return await self._backend.send_message(
-            channel=self._channel(args),
+            channel=channel,
             content=args["content"],
         )
 
     async def _call_edit_message(self, args: dict[str, Any]) -> Any:
+        channel = self._channel(args)
+        await self._check_channel_access(channel)
         return await self._backend.edit_message(
             message=args["message_id"],
             content=args["content"],
-            channel=self._channel(args),
+            channel=channel,
         )
 
     async def _call_add_reaction(self, args: dict[str, Any]) -> Any:
+        channel = self._channel(args)
+        await self._check_channel_access(channel)
         await self._backend.add_reaction(
             message=args["message_id"],
             emoji=args["emoji"],
-            channel=self._channel(args),
+            channel=channel,
         )
         return {"ok": True}

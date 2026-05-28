@@ -41,6 +41,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "mistune>=3",
     "pydantic>=2",
     "singledispatch",
 ]

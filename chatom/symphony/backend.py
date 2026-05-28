@@ -9,7 +9,7 @@ import contextlib
 import importlib
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, ClassVar, List, Optional, Union
 
 from pydantic import Field
@@ -451,6 +451,59 @@ class SymphonyBackend(BackendBase):
         except Exception:
             return None
 
+    async def fetch_channel_members(
+        self,
+        identifier: Optional[Union[str, Channel]] = None,
+        *,
+        id: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> List[User]:
+        """Fetch members of a Symphony room.
+
+        Args:
+            identifier: A Channel object or stream ID string.
+            id: Stream/room ID.
+            name: Room name (will be resolved via search).
+
+        Returns:
+            List of users who are members of the room.
+        """
+        if self._bdk is None:
+            raise RuntimeError("Symphony not connected")
+
+        # Resolve channel ID
+        channel_id = None
+        if isinstance(identifier, (Channel, SymphonyChannel)):
+            channel_id = identifier.id
+            if not channel_id and identifier.name:
+                name = identifier.name
+        elif isinstance(identifier, str) and identifier:
+            channel_id = identifier
+
+        if not channel_id and id:
+            channel_id = id
+
+        if not channel_id and name:
+            # Resolve by name
+            resolved = await self.fetch_channel(name=name)
+            if resolved:
+                channel_id = resolved.id
+
+        if not channel_id:
+            return []
+
+        try:
+            stream_service = self._bdk.streams()
+            membership_list = await stream_service.list_room_members(channel_id)
+            members: List[User] = []
+            if membership_list and membership_list.value:
+                for member in membership_list.value:
+                    members.append(SymphonyUser(id=str(member.id)))
+            return members
+        except Exception:
+            log.exception("Error fetching room members for %s", channel_id)
+            return []
+
     async def fetch_messages(
         self,
         channel: Union[str, Channel],
@@ -460,14 +513,17 @@ class SymphonyBackend(BackendBase):
     ) -> List[Message]:
         """Fetch messages from a Symphony stream.
 
+        When neither *before* nor *after* is specified, retrieves the most
+        recent *limit* messages by paginating backward in time windows.
+
         Args:
             channel: The stream to fetch messages from (ID string or Channel object).
-            limit: Maximum number of messages.
+            limit: Maximum number of messages to return.
             before: Fetch messages before this message (ID string or Message object).
             after: Fetch messages after this message (ID string or Message object).
 
         Returns:
-            List of messages.
+            List of messages, ordered oldest-first.
         """
         if self._bdk is None:
             raise RuntimeError("Symphony not connected")
@@ -475,7 +531,7 @@ class SymphonyBackend(BackendBase):
         # Resolve channel ID
         channel_id = await self._resolve_channel_id(channel)
 
-        # Resolve after message ID
+        # Resolve after message ID / timestamp
         after_id = None
         if after:
             if isinstance(after, Message):
@@ -483,34 +539,91 @@ class SymphonyBackend(BackendBase):
             else:
                 after_id = after
 
+        if after_id:
+            # Simple case: fetch from a known point forward
+            return await self._fetch_messages_since(channel_id, since_ms=int(after_id), limit=limit)
+
+        # Default: get the most recent `limit` messages by paging backward
+        return await self._fetch_recent_messages(channel_id, limit)
+
+    async def _fetch_messages_since(self, channel_id: str, since_ms: int, limit: int) -> List[Message]:
+        """Fetch up to *limit* messages after a given timestamp."""
+        message_service = self._bdk.messages()
         try:
-            message_service = self._bdk.messages()
+            messages_data = await message_service.list_messages(stream_id=channel_id, since=since_ms, limit=limit)
+        except Exception as e:
+            raise RuntimeError(f"Failed to fetch messages: {e}") from e
+        return self._convert_messages(messages_data, channel_id)
 
-            # Build parameters
-            kwargs: dict = {"stream_id": channel_id, "limit": limit}
+    async def _fetch_recent_messages(self, channel_id: str, limit: int) -> List[Message]:
+        """Page backward in time to collect the most recent *limit* messages.
 
-            # Symphony uses timestamps for pagination
-            if after_id:
-                # Try to parse as timestamp
-                kwargs["since"] = int(after_id)
+        Strategy:
+        The Symphony API returns oldest-first from a given ``since`` timestamp.
+        To get the most recent N messages we widen a lookback window starting
+        from 1 hour, doubling each iteration until we've captured at least
+        ``limit`` messages (or hit the 90-day backstop).  Within each window
+        we use ``skip``-based pagination to fetch ALL messages.
+        """
+        message_service = self._bdk.messages()
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        page_limit = 500  # Symphony API max per request
+        max_backstop_ms = now_ms - int(timedelta(days=90).total_seconds() * 1000)
 
-            messages_data = await message_service.list_messages(**kwargs)
+        window_hours = 1
+        while True:
+            window_start_ms = now_ms - int(window_hours * 3600 * 1000)
+            if window_start_ms < max_backstop_ms:
+                window_start_ms = max_backstop_ms
 
-            messages: List[Message] = []
-            for msg in messages_data:
-                message = SymphonyMessage(
+            # Fetch ALL messages from window_start to now via skip pagination
+            all_in_window: list = []
+            skip = 0
+            while True:
+                try:
+                    batch = await message_service.list_messages(
+                        stream_id=channel_id,
+                        since=window_start_ms,
+                        skip=skip,
+                        limit=page_limit,
+                    )
+                except Exception as e:
+                    raise RuntimeError(f"Failed to fetch messages: {e}") from e
+
+                if not batch:
+                    break
+                all_in_window.extend(batch)
+                if len(batch) < page_limit:
+                    break  # got everything in this window
+                skip += len(batch)
+
+            if len(all_in_window) >= limit:
+                # We have enough — convert and take the most recent `limit`
+                messages = self._convert_messages(all_in_window, channel_id)
+                return messages[-limit:]
+
+            if window_start_ms <= max_backstop_ms:
+                # Hit the backstop — return whatever we have
+                messages = self._convert_messages(all_in_window, channel_id)
+                return messages[-limit:] if len(messages) > limit else messages
+
+            # Not enough — widen the window and retry
+            window_hours = min(window_hours * 2, 24 * 90)
+
+    def _convert_messages(self, messages_data: list, channel_id: str) -> List[Message]:
+        """Convert raw V4Message objects to SymphonyMessage instances."""
+        messages: List[Message] = []
+        for msg in messages_data:
+            messages.append(
+                SymphonyMessage(
                     id=msg.message_id,
-                    content=msg.message,  # MessageML content
+                    content=msg.message,
                     created_at=datetime.fromtimestamp(msg.timestamp / 1000, tz=timezone.utc),
                     author=SymphonyUser(id=str(msg.user.user_id)) if msg.user else None,
                     channel=SymphonyChannel(id=channel_id),
                 )
-                messages.append(message)
-
-            return messages
-
-        except Exception as e:
-            raise RuntimeError(f"Failed to fetch messages: {e}") from e
+            )
+        return messages
 
     async def search_messages(
         self,
@@ -1362,7 +1475,7 @@ class SymphonyBackend(BackendBase):
                     channel=channel,
                     created_at=msg_timestamp,
                     data=msg.data,
-                    mentions=mention_users,  # List of SymphonyUser objects
+                    mentions=list(mention_users),  # List of SymphonyUser objects
                 )
 
                 # If we didn't find the author via lookup, use info from initiator
