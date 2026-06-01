@@ -448,7 +448,7 @@ class MockSlackBackend(SlackBackend):
 
         # Sort by timestamp and limit
         messages = sorted(messages, key=lambda m: m.ts)
-        return messages[:limit]
+        return list(messages[:limit])
 
     async def send_message(
         self,

@@ -27,6 +27,7 @@ from .message import (
     get_format_for_backend,
     render_message,
 )
+from .parse import convert_format, parse_markdown
 from .table import Table, TableAlignment, TableCell, TableRow
 from .text import (
     Bold,
@@ -137,4 +138,7 @@ __all__ = (
     "Modal",
     "ComponentContainer",
     "attach_components_for_backend",
+    # Parse / convert
+    "parse_markdown",
+    "convert_format",
 )

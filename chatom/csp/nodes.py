@@ -387,7 +387,7 @@ def _send_messages_thread(msg_queue: Queue, backend: BackendBase):
 
                         kwargs["content"] = msg.content
                         attach_components_for_backend(kwargs, msg.components, thread_backend.get_format())
-                        content_to_send = kwargs.pop("content")
+                        content_to_send = str(kwargs.pop("content"))
                     else:
                         content_to_send = msg.content
                     await thread_backend.send_message(

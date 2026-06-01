@@ -178,7 +178,10 @@ class Strikethrough(TextNode):
             return f"~~{content}~~"
         elif fmt == Format.SLACK_MARKDOWN:
             return f"~{content}~"
-        elif fmt in (Format.HTML, Format.SYMPHONY_MESSAGEML):
+        elif fmt == Format.SYMPHONY_MESSAGEML:
+            # Symphony does not support <s>; render with dash decoration
+            return f"-{content}-"
+        elif fmt == Format.HTML:
             return f"<s>{content}</s>"
         return content
 
@@ -200,7 +203,10 @@ class Underline(TextNode):
 
         if fmt == Format.DISCORD_MARKDOWN:
             return f"__{content}__"
-        elif fmt in (Format.HTML, Format.SYMPHONY_MESSAGEML):
+        elif fmt == Format.SYMPHONY_MESSAGEML:
+            # Symphony does not support <u>; render content as-is
+            return content
+        elif fmt == Format.HTML:
             return f"<u>{content}</u>"
         # Most formats don't support underline
         return content
@@ -300,7 +306,12 @@ class Quote(TextNode):
             # Prefix each line with >
             lines = content.split("\n")
             return "\n".join(f"> {line}" for line in lines)
-        elif fmt in (Format.HTML, Format.SYMPHONY_MESSAGEML):
+        elif fmt == Format.SYMPHONY_MESSAGEML:
+            # Symphony does not support <blockquote>; render with visual quote prefix
+            if "<p>" in content:
+                return content.replace("<p>", "<p>\u258e ")
+            return f"<p>\u258e {content}</p>"
+        elif fmt == Format.HTML:
             return f"<blockquote>{content}</blockquote>"
         return content
 

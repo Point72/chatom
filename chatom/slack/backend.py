@@ -1207,7 +1207,7 @@ class SlackBackend(BackendBase):
                             channel=channel_obj,  # Proper SlackChannel object
                             thread=Thread(id=thread_ts) if thread_ts else None,
                             created_at=datetime.fromtimestamp(float(ts)) if ts else datetime.now(),
-                            mentions=mention_users,  # Resolved mention users
+                            mentions=list(mention_users),  # Resolved mention users
                             metadata={
                                 "is_im": is_im,
                                 "author_name": author_name,
